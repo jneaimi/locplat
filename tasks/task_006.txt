@@ -3,12 +3,16 @@
 # Status: pending
 # Dependencies: 5
 # Priority: medium
-# Description: Create specialized endpoints and functionality for Directus CMS integration, including batch translation support and Directus-specific data formatting.
+# Description: Create specialized endpoints and functionality for Directus CMS integration, including batch translation support, webhook-based auto-translation, SDK integration, schema introspection, and Directus-specific data formatting.
 # Details:
 1. Create Directus-specific data models
 2. Implement batch translation for collections
 3. Add Directus field format handling
 4. Create specialized endpoints for Directus
+5. Implement webhook support for auto-translation
+6. Integrate with Directus SDK
+7. Add collection schema introspection
+8. Mirror directus-translator functionality for seamless workflow integration
 
 Directus models:
 ```python
@@ -31,11 +35,25 @@ class DirectusBatchRequest(BaseModel):
 class DirectusBatchResponse(BaseModel):
     items: List[Dict[str, Any]]
     stats: Dict[str, Any]
+
+class DirectusWebhookPayload(BaseModel):
+    event: str  # create, update, delete
+    collection: str
+    item: Dict[str, Any]
+    target_languages: List[str]
+    client_id: str
+    openai_key: Optional[str] = None
+    google_key: Optional[str] = None
+
+class DirectusSchemaRequest(BaseModel):
+    collection: str
+    client_id: str
 ```
 
 Directus integration implementation:
 ```python
 from fastapi import APIRouter, Depends, HTTPException
+from directus_sdk import Directus
 
 directus_router = APIRouter(prefix="/directus", tags=["directus"])
 
@@ -115,6 +133,64 @@ async def configure_directus_collection(
     
     return {"status": "success"}
 
+@directus_router.post("/webhook")
+async def directus_webhook_handler(
+    payload: DirectusWebhookPayload,
+    translation_service = Depends(get_translation_service)
+):
+    """Handle webhook events from Directus for auto-translation"""
+    if payload.event not in ["create", "update"]:
+        return {"status": "ignored", "reason": f"Event {payload.event} not configured for translation"}
+    
+    results = []
+    for target_lang in payload.target_languages:
+        try:
+            result = await translation_service.translate_content(
+                content=payload.item,
+                source_lang="en",  # Assuming English is the source
+                target_lang=target_lang,
+                openai_key=payload.openai_key,
+                google_key=payload.google_key,
+                collection_name=payload.collection,
+                client_id=payload.client_id
+            )
+            results.append({
+                "language": target_lang,
+                "status": "success",
+                "translated_item": result["translated_content"]
+            })
+        except Exception as e:
+            results.append({
+                "language": target_lang,
+                "status": "error",
+                "error": str(e)
+            })
+    
+    return {"results": results}
+
+@directus_router.post("/schema/introspect")
+async def introspect_collection_schema(
+    request: DirectusSchemaRequest,
+    directus_service = Depends(get_directus_service)
+):
+    """Introspect a Directus collection schema to identify translatable fields"""
+    schema = await directus_service.get_collection_schema(
+        client_id=request.client_id,
+        collection=request.collection
+    )
+    
+    # Identify fields that are likely to contain translatable content
+    translatable_fields = []
+    for field in schema["fields"]:
+        if field["type"] in ["string", "text", "json"] or field.get("interface") in ["input", "input-rich-text-md", "input-rich-text-html"]:
+            translatable_fields.append(field["field"])
+    
+    return {
+        "collection": request.collection,
+        "schema": schema,
+        "suggested_translatable_fields": translatable_fields
+    }
+
 # Add the router to the main app
 app.include_router(directus_router)
 ```
@@ -135,6 +211,61 @@ def format_directus_response(translated_items, original_items):
         })
     
     return result
+
+class DirectusService:
+    """Service for interacting with Directus CMS"""
+    
+    def __init__(self, db):
+        self.db = db
+        self.client_configs = {}
+    
+    async def get_directus_client(self, client_id):
+        """Get or create a Directus SDK client for the given client_id"""
+        if client_id not in self.client_configs:
+            # Get client config from database
+            config = await self.db.fetch_one(
+                "SELECT directus_url, directus_token FROM client_configs WHERE client_id = $1",
+                client_id
+            )
+            
+            if not config:
+                raise ValueError(f"No Directus configuration found for client {client_id}")
+            
+            self.client_configs[client_id] = {
+                "url": config["directus_url"],
+                "token": config["directus_token"],
+                "client": Directus(config["directus_url"], token=config["directus_token"])
+            }
+        
+        return self.client_configs[client_id]["client"]
+    
+    async def get_collection_schema(self, client_id, collection):
+        """Get the schema for a Directus collection"""
+        client = await self.get_directus_client(client_id)
+        return await client.collections.read_one(collection)
+    
+    async def update_translated_item(self, client_id, collection, item_id, translated_data, language):
+        """Update an item with translated content in the specified language"""
+        client = await self.get_directus_client(client_id)
+        
+        # Assuming Directus uses a language field or has a translations relation
+        # This implementation will vary based on how translations are structured in Directus
+        if collection.endswith("_translations"):
+            # If using a translations collection
+            await client.items(collection).update({
+                "item_id": item_id,
+                "language": language,
+                **translated_data
+            })
+        else:
+            # If using language-specific fields (e.g., title_fr, description_fr)
+            language_fields = {}
+            for key, value in translated_data.items():
+                language_fields[f"{key}_{language}"] = value
+            
+            await client.items(collection).update(item_id, language_fields)
+        
+        return {"status": "success"}
 ```
 
 # Test Strategy:
@@ -148,3 +279,9 @@ def format_directus_response(translated_items, original_items):
 8. Validate statistics reporting
 9. Test with different collection types and field structures
 10. Verify integration with Directus webhook patterns
+11. Test webhook-based auto-translation functionality
+12. Verify schema introspection correctly identifies translatable fields
+13. Test Directus SDK integration for reading and updating content
+14. Validate the system works with both translations collections and language-specific fields
+15. Test end-to-end workflow from content creation to translation via webhooks
+16. Verify compatibility with directus-translator patterns for seamless migration

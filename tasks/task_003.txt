@@ -3,60 +3,294 @@
 # Status: pending
 # Dependencies: 1
 # Priority: medium
-# Description: Create a caching system using Redis to store translation results and avoid duplicate API calls, reducing costs and improving performance.
+# Description: Create a caching system using Redis to store AI responses from multiple providers (OpenAI, Anthropic, Mistral, and DeepSeek) to avoid duplicate API calls, reducing costs and improving performance. Optimize for Directus integration patterns with provider-specific caching strategies.
 # Details:
-1. Design cache key generation based on content hash
-2. Implement Redis cache operations (get, set, delete)
-3. Add TTL (time-to-live) for cached translations
-4. Create cache hit/miss tracking for metrics
+1. Design cache key generation based on content hash, prompt, model, and provider
+2. Implement Redis cache operations (get, set, delete) with provider-specific handling
+3. Add dynamic TTL (time-to-live) based on content type, model, and provider cost tier
+4. Create cache hit/miss tracking for metrics per provider
+5. Support cache invalidation for specific Directus collections and AI models
+6. Implement efficient batch response caching
+7. Add collection-specific cache patterns for Directus
+8. Implement cache warming for frequently requested content
+9. Support cache versioning for model updates
+10. Add compression for large response blocks
+11. Implement cost-aware caching strategies (longer TTL for expensive providers like Anthropic Claude)
+12. Add provider-specific confidence scoring to adjust TTL
 
 Cache implementation:
 ```python
 import hashlib
 import json
+import zlib
 from redis import Redis
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 
-class TranslationCache:
-    def __init__(self, redis_client: Redis, ttl_seconds: int = 86400):
+class AIResponseCache:
+    def __init__(self, redis_client: Redis, default_ttl_seconds: int = 86400):
         self.redis = redis_client
-        self.ttl = ttl_seconds
+        self.default_ttl = default_ttl_seconds
+        self.version = 1  # For cache versioning
+        
+        # Define cost tiers for different providers to influence caching strategy
+        self.provider_cost_tiers = {
+            'openai': {
+                'gpt-3.5-turbo': 'low',
+                'gpt-4': 'high',
+                'gpt-4-turbo': 'high'
+            },
+            'anthropic': {
+                'claude-instant': 'medium',
+                'claude-2': 'high',
+                'claude-3-opus': 'very_high',
+                'claude-3-sonnet': 'high',
+                'claude-3-haiku': 'medium'
+            },
+            'mistral': {
+                'mistral-tiny': 'low',
+                'mistral-small': 'medium',
+                'mistral-medium': 'medium',
+                'mistral-large': 'high'
+            },
+            'deepseek': {
+                'deepseek-coder': 'medium',
+                'deepseek-chat': 'medium'
+            }
+        }
     
-    def _generate_key(self, content: str, source_lang: str, target_lang: str) -> str:
-        # Create a unique hash based on content and language pair
-        content_hash = hashlib.md5(content.encode()).hexdigest()
-        return f"translation:{source_lang}:{target_lang}:{content_hash}"
+    def _generate_key(self, prompt: str, provider: str, model: str, collection: str = None) -> str:
+        # Create a unique hash based on prompt, provider, model and optional collection
+        content_hash = hashlib.md5(prompt.encode()).hexdigest()
+        base_key = f"ai_response:v{self.version}:{provider}:{model}:{content_hash}"
+        if collection:
+            return f"{base_key}:collection:{collection}"
+        return base_key
     
-    async def get_cached_translation(self, content: str, source_lang: str, target_lang: str) -> Optional[str]:
-        key = self._generate_key(content, source_lang, target_lang)
+    def _compress_content(self, content: str) -> bytes:
+        # Compress large content blocks
+        return zlib.compress(content.encode('utf-8'))
+    
+    def _decompress_content(self, compressed_data: bytes) -> str:
+        # Decompress content
+        return zlib.decompress(compressed_data).decode('utf-8')
+    
+    def _calculate_ttl(self, content_type: str, provider: str, model: str, confidence: float = 1.0) -> int:
+        # Dynamic TTL based on content type, provider cost tier, and confidence
+        base_ttl = self.default_ttl
+        
+        # Adjust TTL based on content type
+        if content_type == 'critical':
+            base_ttl = 43200  # 12 hours for critical content
+        elif content_type == 'static':
+            base_ttl = 604800  # 7 days for static content
+        
+        # Adjust TTL based on provider cost tier
+        cost_tier = 'medium'  # Default
+        if provider in self.provider_cost_tiers and model in self.provider_cost_tiers[provider]:
+            cost_tier = self.provider_cost_tiers[provider][model]
+        
+        # More expensive models get longer cache times to save costs
+        tier_multipliers = {
+            'low': 0.8,
+            'medium': 1.0,
+            'high': 1.5,
+            'very_high': 2.0
+        }
+        
+        tier_factor = tier_multipliers.get(cost_tier, 1.0)
+        confidence_factor = max(0.5, min(1.5, confidence))  # Between 0.5 and 1.5
+        
+        return int(base_ttl * tier_factor * confidence_factor)
+    
+    async def get_cached_response(self, prompt: str, provider: str, model: str, collection: str = None) -> Optional[str]:
+        key = self._generate_key(prompt, provider, model, collection)
         cached = self.redis.get(key)
         if cached:
-            # Track cache hit
-            self.redis.incr('cache:hits')
-            return cached.decode('utf-8')
-        # Track cache miss
-        self.redis.incr('cache:misses')
+            # Track cache hit for this provider
+            self.redis.incr(f'cache:{provider}:{model}:hits')
+            # Check if content is compressed
+            try:
+                return self._decompress_content(cached)
+            except zlib.error:
+                # Not compressed
+                return cached.decode('utf-8')
+        # Track cache miss for this provider
+        self.redis.incr(f'cache:{provider}:{model}:misses')
         return None
     
-    async def cache_translation(self, content: str, source_lang: str, target_lang: str, translation: str) -> None:
-        key = self._generate_key(content, source_lang, target_lang)
-        self.redis.set(key, translation, ex=self.ttl)
+    async def cache_response(self, prompt: str, provider: str, model: str, response: str, collection: str = None, content_type: str = 'standard', confidence: float = 1.0) -> None:
+        key = self._generate_key(prompt, provider, model, collection)
+        ttl = self._calculate_ttl(content_type, provider, model, confidence)
+        
+        # Compress large content
+        if len(response) > 1000:
+            compressed_data = self._compress_content(response)
+            self.redis.set(key, compressed_data, ex=ttl)
+        else:
+            self.redis.set(key, response, ex=ttl)
     
-    async def get_cache_stats(self) -> Dict[str, int]:
-        hits = int(self.redis.get('cache:hits') or 0)
-        misses = int(self.redis.get('cache:misses') or 0)
-        return {
-            'hits': hits,
-            'misses': misses,
-            'hit_rate': hits / (hits + misses) if (hits + misses) > 0 else 0
-        }
+    async def cache_batch_responses(self, items: List[Dict[str, Any]]) -> None:
+        pipeline = self.redis.pipeline()
+        for item in items:
+            key = self._generate_key(
+                item['prompt'], 
+                item['provider'], 
+                item['model'],
+                item.get('collection')
+            )
+            ttl = self._calculate_ttl(
+                item.get('content_type', 'standard'), 
+                item['provider'], 
+                item['model'],
+                item.get('confidence', 1.0)
+            )
+            response = item['response']
+            
+            # Compress large content
+            if len(response) > 1000:
+                compressed_data = self._compress_content(response)
+                pipeline.set(key, compressed_data, ex=ttl)
+            else:
+                pipeline.set(key, response, ex=ttl)
+        pipeline.execute()
+    
+    async def invalidate_cache(self, provider: str = None, model: str = None, collection: str = None) -> int:
+        # Build pattern for keys to delete
+        pattern_parts = ['ai_response:v' + str(self.version)]  
+        if provider:
+            pattern_parts.append(provider)
+        else:
+            pattern_parts.append('*')
+            
+        if model:
+            pattern_parts.append(model)
+        else:
+            pattern_parts.append('*')
+            
+        pattern_parts.append('*')  # For content hash
+        
+        if collection:
+            pattern_parts.append('collection:' + collection)
+            
+        pattern = ':'.join(pattern_parts)
+        
+        # Get keys matching pattern
+        keys = self.redis.keys(pattern)
+        if keys:
+            return self.redis.delete(*keys)
+        return 0
+    
+    async def warm_cache(self, frequent_content: List[Dict[str, Any]]) -> None:
+        # Pre-populate cache with frequently accessed content
+        # This would typically be called by a scheduled job
+        for item in frequent_content:
+            cached = await self.get_cached_response(
+                item['prompt'],
+                item['provider'],
+                item['model'],
+                item.get('collection')
+            )
+            
+            # If not in cache and we have a response, cache it
+            if not cached and 'response' in item:
+                await self.cache_response(
+                    item['prompt'],
+                    item['provider'],
+                    item['model'],
+                    item['response'],
+                    item.get('collection'),
+                    item.get('content_type', 'standard'),
+                    item.get('confidence', 1.0)
+                )
+    
+    async def get_cache_stats(self, provider: str = None, model: str = None) -> Dict[str, Any]:
+        if provider and model:
+            hits = int(self.redis.get(f'cache:{provider}:{model}:hits') or 0)
+            misses = int(self.redis.get(f'cache:{provider}:{model}:misses') or 0)
+            return {
+                'provider': provider,
+                'model': model,
+                'hits': hits,
+                'misses': misses,
+                'hit_rate': hits / (hits + misses) if (hits + misses) > 0 else 0
+            }
+        elif provider:
+            # Get stats for all models of a provider
+            stats = {'provider': provider, 'models': {}, 'total_hits': 0, 'total_misses': 0}
+            model_keys = self.redis.keys(f'cache:{provider}:*:hits')
+            
+            for key in model_keys:
+                key_parts = key.decode('utf-8').split(':')
+                model = key_parts[2]
+                hits = int(self.redis.get(f'cache:{provider}:{model}:hits') or 0)
+                misses = int(self.redis.get(f'cache:{provider}:{model}:misses') or 0)
+                
+                stats['models'][model] = {
+                    'hits': hits,
+                    'misses': misses,
+                    'hit_rate': hits / (hits + misses) if (hits + misses) > 0 else 0
+                }
+                
+                stats['total_hits'] += hits
+                stats['total_misses'] += misses
+            
+            total = stats['total_hits'] + stats['total_misses']
+            stats['overall_hit_rate'] = stats['total_hits'] / total if total > 0 else 0
+            
+            return stats
+        else:
+            # Get stats for all providers
+            stats = {'providers': {}, 'overall': {'hits': 0, 'misses': 0}}
+            provider_keys = self.redis.keys('cache:*:*:hits')
+            
+            for key in provider_keys:
+                key_parts = key.decode('utf-8').split(':')
+                provider = key_parts[1]
+                model = key_parts[2]
+                hits = int(self.redis.get(f'cache:{provider}:{model}:hits') or 0)
+                misses = int(self.redis.get(f'cache:{provider}:{model}:misses') or 0)
+                
+                if provider not in stats['providers']:
+                    stats['providers'][provider] = {'models': {}, 'total_hits': 0, 'total_misses': 0}
+                
+                stats['providers'][provider]['models'][model] = {
+                    'hits': hits,
+                    'misses': misses,
+                    'hit_rate': hits / (hits + misses) if (hits + misses) > 0 else 0
+                }
+                
+                stats['providers'][provider]['total_hits'] += hits
+                stats['providers'][provider]['total_misses'] += misses
+                stats['overall']['hits'] += hits
+                stats['overall']['misses'] += misses
+            
+            # Calculate overall hit rates for each provider
+            for provider in stats['providers']:
+                total = stats['providers'][provider]['total_hits'] + stats['providers'][provider]['total_misses']
+                stats['providers'][provider]['hit_rate'] = stats['providers'][provider]['total_hits'] / total if total > 0 else 0
+            
+            # Calculate overall hit rate
+            total = stats['overall']['hits'] + stats['overall']['misses']
+            stats['overall']['hit_rate'] = stats['overall']['hits'] / total if total > 0 else 0
+            
+            return stats
 ```
 
 # Test Strategy:
-1. Unit test cache key generation
-2. Test cache hit and miss scenarios
-3. Verify TTL functionality
-4. Benchmark cache performance
-5. Test cache statistics tracking
-6. Validate cache behavior with different content types
+1. Unit test cache key generation with provider and model parameters
+2. Test cache hit and miss scenarios across different AI providers (OpenAI, Anthropic, Mistral, DeepSeek)
+3. Verify dynamic TTL functionality based on content type, provider cost tier, and confidence
+4. Benchmark cache performance with compression enabled
+5. Test cache statistics tracking per provider and model
+6. Validate cache behavior with different content types and sizes
 7. Test concurrent cache access
+8. Test batch response caching efficiency
+9. Verify cache invalidation for specific collections and models
+10. Test cache warming functionality
+11. Validate cache versioning
+12. Benchmark compression/decompression performance
+13. Test Directus collection-specific caching patterns
+14. Verify provider-specific cache isolation
+15. Test cost-aware caching strategies (verify longer TTL for expensive providers)
+16. Validate provider-specific confidence scoring impact on TTL
+17. Test cache behavior with different models from the same provider

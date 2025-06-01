@@ -19,6 +19,9 @@ httpx>=0.28.0,<0.29.0
 
 # AI/Translation - Latest Stable Versions
 openai>=1.58.0,<2.0.0
+anthropic>=0.37.0,<1.0.0
+mistralai>=1.2.0,<2.0.0
+# DeepSeek uses OpenAI-compatible API
 # Using deep-translator as a free, reliable alternative to Google Translate
 deep-translator>=1.11.4,<2.0.0
 

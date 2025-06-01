@@ -1,24 +1,43 @@
 # Task ID: 2
 # Title: Implement Translation Provider Integration
-# Status: pending
+# Status: done
 # Dependencies: 1
 # Priority: high
-# Description: Create services to integrate with OpenAI (primary) and Google Translate (fallback) translation providers using client-provided API keys.
+# Description: Create services to integrate with multiple AI providers (OpenAI as primary, Anthropic Claude as secondary, Mistral AI as tertiary, and DeepSeek as fallback) using client-provided API keys, supporting the Directus translation interface.
 # Details:
 1. Create abstract translation provider interface
-2. Implement OpenAI provider using their API
-3. Implement Google Translate provider as fallback
-4. Create provider router to handle fallback logic
-5. Add language pair support (English → Arabic, English → Bosnian)
+2. Implement OpenAI provider as primary using their API
+3. Implement Anthropic Claude provider as secondary
+4. Implement Mistral AI provider as tertiary
+5. Implement DeepSeek provider as final fallback
+6. Create provider router to handle cascading fallback logic
+7. Add language pair support with proper handling for Arabic (RTL) and Bosnian (Latin/Cyrillic)
+8. Support structured responses compatible with Directus translation interface
+9. Implement collection-specific translations following Directus patterns
+10. Support batch translation for multiple fields
+11. Add language direction support (LTR/RTL)
+12. Implement translation quality assessment and validation
+13. Support nested JSON structures and field mapping
+14. Ensure translation context preservation and formatting maintenance
+15. Implement provider-specific optimizations and prompt engineering
 
 Provider interface:
 ```python
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, List
+from enum import Enum
+
+class LanguageDirection(Enum):
+    LTR = "ltr"
+    RTL = "rtl"
 
 class TranslationProvider(ABC):
     @abstractmethod
     async def translate(self, text: str, source_lang: str, target_lang: str, api_key: str) -> str:
+        pass
+        
+    @abstractmethod
+    async def batch_translate(self, texts: List[str], source_lang: str, target_lang: str, api_key: str) -> List[str]:
         pass
 
 class OpenAIProvider(TranslationProvider):
@@ -26,33 +45,112 @@ class OpenAIProvider(TranslationProvider):
         # OpenAI implementation using their API
         # Use the provided API key for authentication
         pass
+        
+    async def batch_translate(self, texts: List[str], source_lang: str, target_lang: str, api_key: str) -> List[str]:
+        # Batch translation implementation
+        pass
 
-class GoogleTranslateProvider(TranslationProvider):
+class AnthropicProvider(TranslationProvider):
     async def translate(self, text: str, source_lang: str, target_lang: str, api_key: str) -> str:
-        # Google Translate implementation
+        # Anthropic Claude implementation
+        pass
+        
+    async def batch_translate(self, texts: List[str], source_lang: str, target_lang: str, api_key: str) -> List[str]:
+        # Batch translation implementation
+        pass
+
+class MistralProvider(TranslationProvider):
+    async def translate(self, text: str, source_lang: str, target_lang: str, api_key: str) -> str:
+        # Mistral AI implementation
+        pass
+        
+    async def batch_translate(self, texts: List[str], source_lang: str, target_lang: str, api_key: str) -> List[str]:
+        # Batch translation implementation
+        pass
+
+class DeepSeekProvider(TranslationProvider):
+    async def translate(self, text: str, source_lang: str, target_lang: str, api_key: str) -> str:
+        # DeepSeek implementation
+        pass
+        
+    async def batch_translate(self, texts: List[str], source_lang: str, target_lang: str, api_key: str) -> List[str]:
+        # Batch translation implementation
         pass
 
 class ProviderRouter:
     def __init__(self):
-        self.primary = OpenAIProvider()
-        self.fallback = GoogleTranslateProvider()
+        self.providers = [
+            OpenAIProvider(),      # Primary
+            AnthropicProvider(),   # Secondary
+            MistralProvider(),     # Tertiary
+            DeepSeekProvider()     # Final fallback
+        ]
     
     async def translate(self, text: str, source_lang: str, target_lang: str, 
-                        openai_key: str, google_key: str) -> str:
-        try:
-            return await self.primary.translate(text, source_lang, target_lang, openai_key)
-        except Exception as e:
-            # Log the error
-            return await self.fallback.translate(text, source_lang, target_lang, google_key)
+                        api_keys: Dict[str, str]) -> str:
+        last_error = None
+        for i, provider in enumerate(self.providers):
+            try:
+                provider_name = provider.__class__.__name__.replace('Provider', '').lower()
+                if provider_name in api_keys and api_keys[provider_name]:
+                    return await provider.translate(text, source_lang, target_lang, api_keys[provider_name])
+            except Exception as e:
+                # Log the error
+                last_error = e
+                continue
+        raise Exception(f"All translation providers failed. Last error: {last_error}")
+        
+    async def batch_translate(self, texts: List[str], source_lang: str, target_lang: str,
+                             api_keys: Dict[str, str]) -> List[str]:
+        # Similar cascading fallback logic for batch translation
+        pass
+        
+    async def translate_collection(self, collection_data: Dict[str, Any], fields: List[str],
+                                  source_lang: str, target_lang: str, api_keys: Dict[str, str]) -> Dict[str, Any]:
+        # Implement collection-specific translation following Directus patterns
+        pass
+        
+    def get_language_direction(self, lang_code: str) -> LanguageDirection:
+        # Return language direction (RTL for Arabic, LTR for others)
+        rtl_languages = ['ar', 'he', 'fa', 'ur']
+        return LanguageDirection.RTL if lang_code in rtl_languages else LanguageDirection.LTR
+        
+    async def assess_quality(self, original: str, translation: str, source_lang: str, target_lang: str) -> float:
+        # Implement translation quality assessment
+        pass
+        
+    async def translate_nested_json(self, json_data: Dict[str, Any], field_mapping: Dict[str, str],
+                                  source_lang: str, target_lang: str, api_keys: Dict[str, str]) -> Dict[str, Any]:
+        # Handle nested JSON structures with field mapping
+        pass
+        
+    async def optimize_prompt(self, text: str, provider_name: str, source_lang: str, target_lang: str) -> str:
+        # Provider-specific prompt engineering optimizations
+        # Enhance context preservation and cultural sensitivity
+        pass
 ```
 
-Implement GET /languages endpoint to return supported language pairs.
+Implement GET /languages endpoint to return supported language pairs with direction information.
+
+Never store client API keys - they should be provided with each request and used only for that specific translation operation.
 
 # Test Strategy:
 1. Unit test each provider with mock API responses
-2. Test fallback mechanism when primary provider fails
-3. Verify correct handling of API keys
+2. Test cascading fallback mechanism when providers fail
+3. Verify correct handling of API keys for each provider
 4. Test with actual API keys in development environment
-5. Validate supported language pairs
-6. Test error handling for invalid API keys
-7. Measure response times for performance benchmarking
+5. Validate supported language pairs including RTL support for Arabic
+6. Test both Latin and Cyrillic script support for Bosnian
+7. Test error handling for invalid API keys
+8. Measure response times for performance benchmarking
+9. Test batch translation functionality
+10. Verify collection-specific translations follow Directus patterns
+11. Test language direction detection
+12. Validate translation quality assessment
+13. Test structured response compatibility with Directus translation interface
+14. Verify nested JSON structure handling and field mapping
+15. Test translation context preservation across different providers
+16. Validate formatting maintenance in translated content
+17. Test cultural sensitivity handling, especially for Arabic content
+18. Verify API keys are never stored and only used for the current request
+19. Test provider-specific optimizations and prompt engineering effectiveness

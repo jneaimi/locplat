@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.health import router as health_router
+from app.api.translation import router as translation_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +36,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health_router, prefix="", tags=["Health"])
+app.include_router(translation_router, prefix="/api/v1", tags=["Translation"])
 
 if __name__ == "__main__":
     import uvicorn

@@ -3,30 +3,32 @@
 # Status: pending
 # Dependencies: 2, 3, 4
 # Priority: high
-# Description: Create the main translation API endpoints including the core translation functionality, language pair listing, and field configuration.
+# Description: Create the main translation API endpoints including the core translation functionality, provider management, language pair listing, field configuration, and status monitoring.
 # Details:
 1. Implement POST /translate endpoint
 2. Create GET /languages endpoint
 3. Add POST /fields/config endpoint
-4. Integrate all components (providers, cache, field mapping)
-5. Implement request/response models
+4. Implement GET /providers and POST /providers endpoints for provider management
+5. Add GET /status endpoint for service monitoring
+6. Integrate all components (AI providers, cache, field mapping)
+7. Implement request/response models with structured response support
 
 API implementation:
 ```python
-from fastapi import FastAPI, Depends, HTTPException, Body
+from fastapi import FastAPI, Depends, HTTPException, Body, Header
 from pydantic import BaseModel, Field
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 
 app = FastAPI(title="LocPlat Translation Service")
 
 class TranslationRequest(BaseModel):
     content: Dict[str, Any]
     target_language: str
-    openai_key: str
-    google_key: str
     source_language: str = "en"
     collection_name: Optional[str] = None
     client_id: Optional[str] = None
+    provider: Optional[str] = None  # Allow specifying preferred provider
+    structured_response: bool = False  # Support structured responses like directus-translator
 
 class TranslationResponse(BaseModel):
     translated_content: Dict[str, Any]
@@ -45,20 +47,57 @@ class LanguagePair(BaseModel):
     target: str
     name: str
 
+class ProviderConfig(BaseModel):
+    name: str  # e.g., "openai", "anthropic", "mistral", "deepseek"
+    api_key: str
+    priority: int = 1  # Lower number = higher priority
+    enabled: bool = True
+    model: Optional[str] = None  # Specific model to use
+
+class ProviderInfo(BaseModel):
+    name: str
+    enabled: bool
+    priority: int
+    model: Optional[str] = None
+
+class ServiceStatus(BaseModel):
+    status: str
+    providers: Dict[str, bool]  # Provider name -> availability status
+    cache_size: int
+    uptime: float
+
+# Middleware to handle API key authentication
+@app.middleware("http")
+async def authenticate_client(request, call_next):
+    client_api_key = request.headers.get("X-API-Key")
+    if not client_api_key:
+        return JSONResponse(status_code=401, content={"detail": "API key required"})
+    
+    # Validate API key against database
+    if not await is_valid_api_key(client_api_key):
+        return JSONResponse(status_code=403, content={"detail": "Invalid API key"})
+    
+    # Add client info to request state
+    request.state.client_id = await get_client_id_from_key(client_api_key)
+    
+    response = await call_next(request)
+    return response
+
 @app.post("/translate", response_model=TranslationResponse)
 async def translate_content(
     request: TranslationRequest,
-    translation_service = Depends(get_translation_service)
+    translation_service = Depends(get_translation_service),
+    x_api_key: str = Header(..., alias="X-API-Key")
 ):
     try:
         result = await translation_service.translate_content(
             content=request.content,
             source_lang=request.source_language,
             target_lang=request.target_language,
-            openai_key=request.openai_key,
-            google_key=request.google_key,
+            provider=request.provider,
+            structured_response=request.structured_response,
             collection_name=request.collection_name,
-            client_id=request.client_id
+            client_id=request.client_id or request.state.client_id
         )
         return result
     except Exception as e:
@@ -68,7 +107,8 @@ async def translate_content(
 async def get_languages():
     return [
         {"source": "en", "target": "ar", "name": "English to Arabic"},
-        {"source": "en", "target": "bs", "name": "English to Bosnian"}
+        {"source": "en", "target": "bs", "name": "English to Bosnian"},
+        # Add more language pairs
     ]
 
 @app.post("/fields/config")
@@ -82,19 +122,45 @@ async def configure_fields(
         field_paths=config.field_paths
     )
     return {"status": "success"}
+
+@app.get("/providers", response_model=List[ProviderInfo])
+async def get_providers(
+    provider_manager = Depends(get_provider_manager)
+):
+    return await provider_manager.list_providers()
+
+@app.post("/providers")
+async def configure_provider(
+    config: ProviderConfig,
+    provider_manager = Depends(get_provider_manager)
+):
+    await provider_manager.configure_provider(
+        name=config.name,
+        api_key=config.api_key,
+        priority=config.priority,
+        enabled=config.enabled,
+        model=config.model
+    )
+    return {"status": "success"}
+
+@app.get("/status", response_model=ServiceStatus)
+async def get_service_status(
+    service_monitor = Depends(get_service_monitor)
+):
+    return await service_monitor.get_status()
 ```
 
 Translation service implementation:
 ```python
 class TranslationService:
-    def __init__(self, provider_router, cache, field_mapper):
-        self.provider_router = provider_router
+    def __init__(self, provider_manager, cache, field_mapper):
+        self.provider_manager = provider_manager
         self.cache = cache
         self.field_mapper = field_mapper
     
     async def translate_content(
-        self, content, source_lang, target_lang, openai_key, google_key, 
-        collection_name=None, client_id=None
+        self, content, source_lang, target_lang, provider=None,
+        structured_response=False, collection_name=None, client_id=None
     ):
         # Get field paths if collection_name and client_id provided
         field_paths = []
@@ -111,7 +177,7 @@ class TranslationService:
         # Create result copy
         result = content.copy()
         cache_hit = False
-        provider_used = "openai"
+        provider_used = None
         
         # Process each field
         for path, value in fields_to_translate.items():
@@ -124,16 +190,25 @@ class TranslationService:
                 translated = cached
                 cache_hit = True
             else:
-                # Translate with provider router
-                translated = await self.provider_router.translate(
-                    value, source_lang, target_lang, openai_key, google_key
-                )
+                # Get appropriate provider based on preference or availability
+                translation_provider = await self.provider_manager.get_provider(provider)
+                
+                if structured_response:
+                    # Use structured response format (like directus-translator)
+                    translated = await translation_provider.translate_structured(
+                        value, source_lang, target_lang
+                    )
+                else:
+                    # Standard translation
+                    translated = await translation_provider.translate(
+                        value, source_lang, target_lang
+                    )
+                
                 # Cache result
                 await self.cache.cache_translation(value, source_lang, target_lang, translated)
                 
-                # Determine which provider was used (simplified)
-                if hasattr(self.provider_router, 'last_provider_used'):
-                    provider_used = self.provider_router.last_provider_used
+                # Record which provider was used
+                provider_used = translation_provider.name
             
             # Update result
             self._set_nested_value(result, path, translated)
@@ -142,7 +217,7 @@ class TranslationService:
             "translated_content": result,
             "source_language": source_lang,
             "target_language": target_lang,
-            "provider_used": provider_used,
+            "provider_used": provider_used or "cache",
             "cache_hit": cache_hit
         }
     
@@ -173,16 +248,90 @@ class TranslationService:
                 if part not in current:
                     current[part] = {}
                 current = current[part]
+
+class ProviderManager:
+    def __init__(self, db_client):
+        self.db_client = db_client
+        self.providers = {}
+        self.provider_classes = {
+            "openai": OpenAIProvider,
+            "anthropic": AnthropicProvider,
+            "mistral": MistralProvider,
+            "deepseek": DeepSeekProvider
+        }
+    
+    async def initialize(self):
+        # Load provider configurations from database
+        configs = await self.db_client.get_provider_configs()
+        for config in configs:
+            if config["name"] in self.provider_classes and config["enabled"]:
+                provider_class = self.provider_classes[config["name"]]
+                self.providers[config["name"]] = provider_class(
+                    api_key=config["api_key"],
+                    model=config.get("model")
+                )
+    
+    async def get_provider(self, preferred=None):
+        # Return preferred provider if specified and available
+        if preferred and preferred in self.providers:
+            return self.providers[preferred]
+        
+        # Otherwise return highest priority available provider
+        configs = await self.db_client.get_provider_configs()
+        configs.sort(key=lambda x: x["priority"])
+        
+        for config in configs:
+            if config["name"] in self.providers and config["enabled"]:
+                return self.providers[config["name"]]
+        
+        raise Exception("No translation providers available")
+    
+    async def list_providers(self):
+        configs = await self.db_client.get_provider_configs()
+        return [{
+            "name": config["name"],
+            "enabled": config["enabled"],
+            "priority": config["priority"],
+            "model": config.get("model")
+        } for config in configs]
+    
+    async def configure_provider(self, name, api_key, priority=1, enabled=True, model=None):
+        if name not in self.provider_classes:
+            raise ValueError(f"Unknown provider: {name}")
+        
+        # Save configuration to database
+        await self.db_client.save_provider_config({
+            "name": name,
+            "api_key": api_key,
+            "priority": priority,
+            "enabled": enabled,
+            "model": model
+        })
+        
+        # Update in-memory provider if enabled
+        if enabled:
+            provider_class = self.provider_classes[name]
+            self.providers[name] = provider_class(
+                api_key=api_key,
+                model=model
+            )
+        elif name in self.providers:
+            del self.providers[name]
 ```
 
 # Test Strategy:
 1. Test POST /translate with various content structures
-2. Verify correct handling of API keys
-3. Test caching behavior and hit rate
-4. Validate field mapping functionality
-5. Test error handling and fallback to Google Translate
-6. Verify language pair endpoint returns correct data
-7. Test field configuration endpoint
-8. Perform integration tests with all components
-9. Benchmark API response times
-10. Test with actual Directus content structures
+2. Verify correct handling of client API keys
+3. Test structured response format compatibility with directus-translator
+4. Test with all supported AI providers (OpenAI, Anthropic, Mistral, DeepSeek)
+5. Test provider fallback behavior when preferred provider is unavailable
+6. Test caching behavior and hit rate
+7. Validate field mapping functionality
+8. Verify language pair endpoint returns correct data
+9. Test field configuration endpoint
+10. Test provider management endpoints (GET/POST /providers)
+11. Verify status monitoring endpoint
+12. Perform integration tests with all components
+13. Benchmark API response times with different providers
+14. Test with actual Directus content structures
+15. Verify proper error handling when providers fail

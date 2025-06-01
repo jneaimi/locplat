@@ -3,16 +3,30 @@
 # Status: pending
 # Dependencies: 2, 3
 # Priority: medium
-# Description: Create a system to map and process fields for translation, supporting plain text and basic HTML content types with JSON path support.
+# Description: Create a system to map and process fields for translation, supporting Directus collection structures with primary fields and translation collections, handling plain text, HTML, and other content types with JSON path support. Focus on Directus-specific patterns and support for structured data from AI providers with batch operations.
 # Details:
 1. Implement field mapping configuration storage in PostgreSQL
 2. Create JSON path parser for field selection
 3. Add content type detection and processing (text vs HTML)
 4. Implement field extraction and reassembly logic
+5. Support Directus collection structures with primary fields and translation collections
+6. Handle nested field mapping for complex content structures
+7. Implement field type detection (text, wysiwyg, textarea, etc.)
+8. Support Directus translation interface patterns
+9. Implement language-specific field mapping for RTL languages
+10. Add content sanitization and validation
+11. Handle Directus relation fields and junction tables
+12. Support custom field transformations for different content types
+13. Implement metadata preservation during translation
+14. Support standard Directus translation structure (collection_translations)
+15. Implement handling for language collections in Directus
+16. Add support for structured data from AI providers
+17. Implement batch operations for multiple collection fields
+18. Create optimized processing for Directus-specific field patterns
 
 Database model:
 ```python
-from sqlalchemy import Column, Integer, String, JSON, DateTime
+from sqlalchemy import Column, Integer, String, JSON, DateTime, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
@@ -27,28 +41,67 @@ class FieldConfig(Base):
     field_paths = Column(JSON, nullable=False)  # JSON array of paths
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_translation_collection = Column(Boolean, default=False)
+    primary_collection = Column(String, nullable=True)
+    field_types = Column(JSON, nullable=True)  # Maps field paths to their types
+    rtl_field_mapping = Column(JSON, nullable=True)  # Special handling for RTL languages
+    directus_translation_pattern = Column(String, nullable=True)  # 'collection_translations' or 'language_collections'
+    batch_processing = Column(Boolean, default=False)  # Whether to process fields in batch
 ```
 
 Field mapper implementation:
 ```python
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 import re
 from bs4 import BeautifulSoup
+from enum import Enum
+
+class FieldType(Enum):
+    TEXT = "text"
+    WYSIWYG = "wysiwyg"
+    TEXTAREA = "textarea"
+    STRING = "string"
+    RELATION = "relation"
+    JSON = "json"
+
+class DirectusTranslationPattern(Enum):
+    COLLECTION_TRANSLATIONS = "collection_translations"
+    LANGUAGE_COLLECTIONS = "language_collections"
+    CUSTOM = "custom"
 
 class FieldMapper:
     def __init__(self, db_session):
         self.db_session = db_session
     
-    async def get_field_config(self, client_id: str, collection_name: str) -> List[str]:
+    async def get_field_config(self, client_id: str, collection_name: str) -> Dict[str, Any]:
         # Get field paths from database
         config = self.db_session.query(FieldConfig).filter_by(
             client_id=client_id,
             collection_name=collection_name
         ).first()
         
-        return config.field_paths if config else []
+        if not config:
+            return {
+                "field_paths": [],
+                "is_translation_collection": False,
+                "field_types": {},
+                "rtl_field_mapping": {},
+                "directus_translation_pattern": DirectusTranslationPattern.COLLECTION_TRANSLATIONS.value,
+                "batch_processing": False
+            }
+            
+        return {
+            "field_paths": config.field_paths,
+            "is_translation_collection": config.is_translation_collection,
+            "primary_collection": config.primary_collection,
+            "field_types": config.field_types or {},
+            "rtl_field_mapping": config.rtl_field_mapping or {},
+            "directus_translation_pattern": config.directus_translation_pattern or DirectusTranslationPattern.COLLECTION_TRANSLATIONS.value,
+            "batch_processing": config.batch_processing or False
+        }
     
-    async def save_field_config(self, client_id: str, collection_name: str, field_paths: List[str]) -> None:
+    async def save_field_config(self, client_id: str, collection_name: str, 
+                              field_config: Dict[str, Any]) -> None:
         # Save field configuration to database
         config = self.db_session.query(FieldConfig).filter_by(
             client_id=client_id,
@@ -56,40 +109,156 @@ class FieldMapper:
         ).first()
         
         if config:
-            config.field_paths = field_paths
+            config.field_paths = field_config.get("field_paths", [])
+            config.is_translation_collection = field_config.get("is_translation_collection", False)
+            config.primary_collection = field_config.get("primary_collection")
+            config.field_types = field_config.get("field_types", {})
+            config.rtl_field_mapping = field_config.get("rtl_field_mapping", {})
+            config.directus_translation_pattern = field_config.get("directus_translation_pattern", DirectusTranslationPattern.COLLECTION_TRANSLATIONS.value)
+            config.batch_processing = field_config.get("batch_processing", False)
             config.updated_at = datetime.utcnow()
         else:
             config = FieldConfig(
                 client_id=client_id,
                 collection_name=collection_name,
-                field_paths=field_paths
+                field_paths=field_config.get("field_paths", []),
+                is_translation_collection=field_config.get("is_translation_collection", False),
+                primary_collection=field_config.get("primary_collection"),
+                field_types=field_config.get("field_types", {}),
+                rtl_field_mapping=field_config.get("rtl_field_mapping", {}),
+                directus_translation_pattern=field_config.get("directus_translation_pattern", DirectusTranslationPattern.COLLECTION_TRANSLATIONS.value),
+                batch_processing=field_config.get("batch_processing", False)
             )
             self.db_session.add(config)
         
         self.db_session.commit()
     
-    def extract_fields(self, content: Dict[str, Any], field_paths: List[str]) -> Dict[str, Any]:
+    def extract_fields(self, content: Dict[str, Any], field_config: Dict[str, Any], language: str = None) -> Dict[str, Any]:
         # Extract fields to translate based on paths
         result = {}
+        field_paths = field_config["field_paths"]
+        field_types = field_config.get("field_types", {})
+        rtl_mapping = field_config.get("rtl_field_mapping", {})
+        batch_processing = field_config.get("batch_processing", False)
+        
+        # Check if we should use RTL-specific mapping
+        if language and language in rtl_mapping:
+            field_paths = rtl_mapping[language].get("field_paths", field_paths)
+        
+        # Handle batch processing if enabled
+        if batch_processing:
+            return self._extract_fields_batch(content, field_paths, field_types, language)
+        
+        # Standard field extraction
         for path in field_paths:
             value = self._get_nested_value(content, path)
-            if value:
-                result[path] = value
+            if value is not None:
+                field_type = field_types.get(path, self._detect_field_type(value))
+                result[path] = {
+                    "value": value,
+                    "type": field_type,
+                    "metadata": self._extract_metadata(value, field_type)
+                }
         return result
     
+    def _extract_fields_batch(self, content: Dict[str, Any], field_paths: List[str], 
+                             field_types: Dict[str, str], language: str = None) -> Dict[str, Any]:
+        # Extract fields in batch for more efficient processing
+        result = {}
+        batch_text = []
+        batch_mapping = {}
+        
+        # First pass: collect all text for batch processing
+        for path in field_paths:
+            value = self._get_nested_value(content, path)
+            if value is not None:
+                field_type = field_types.get(path, self._detect_field_type(value))
+                
+                if field_type in [FieldType.TEXT.value, FieldType.STRING.value, FieldType.TEXTAREA.value]:
+                    # Add to batch for text fields
+                    batch_index = len(batch_text)
+                    batch_text.append(value)
+                    batch_mapping[path] = {
+                        "index": batch_index,
+                        "type": field_type
+                    }
+                else:
+                    # Process non-text fields individually
+                    result[path] = {
+                        "value": value,
+                        "type": field_type,
+                        "metadata": self._extract_metadata(value, field_type)
+                    }
+        
+        # Add batch text collection to result
+        if batch_text:
+            result["__batch__"] = {
+                "text": batch_text,
+                "mapping": batch_mapping
+            }
+            
+        return result
+    
+    def _detect_field_type(self, value: Any) -> str:
+        # Auto-detect field type based on content
+        if isinstance(value, str):
+            if self.is_html(value):
+                return FieldType.WYSIWYG.value
+            elif "\n" in value:
+                return FieldType.TEXTAREA.value
+            else:
+                return FieldType.TEXT.value
+        elif isinstance(value, dict):
+            return FieldType.JSON.value
+        else:
+            return FieldType.STRING.value
+    
+    def _extract_metadata(self, value: Any, field_type: str) -> Dict[str, Any]:
+        # Extract metadata to preserve during translation
+        metadata = {}
+        
+        if field_type == FieldType.WYSIWYG.value and isinstance(value, str):
+            metadata["html_structure"] = self._extract_html_structure(value)
+        
+        return metadata
+    
+    def _extract_html_structure(self, html: str) -> Dict[str, Any]:
+        # Extract HTML structure for preservation
+        soup = BeautifulSoup(html, 'html.parser')
+        return {
+            "tags": [tag.name for tag in soup.find_all()],
+            "classes": [cls for tag in soup.find_all() for cls in tag.get("class", [])],
+            "attributes": {tag.name: [attr for attr in tag.attrs if attr != "class"] 
+                          for tag in soup.find_all() if tag.attrs}
+        }
+    
     def _get_nested_value(self, data: Dict[str, Any], path: str) -> Any:
-        # Get value from nested dictionary using dot notation
-        parts = path.split('.')
+        # Get value from nested dictionary using dot notation and array indices
+        if not data or not path:
+            return None
+            
+        parts = re.findall(r'([^\[\]\.]+)|\[(\d+)\]', path)
         current = data
+        
         for part in parts:
-            if isinstance(current, dict) and part in current:
-                current = current[part]
+            key, index = part
+            
+            if key and isinstance(current, dict):
+                if key not in current:
+                    return None
+                current = current[key]
+            elif index and isinstance(current, list):
+                idx = int(index)
+                if idx >= len(current):
+                    return None
+                current = current[idx]
             else:
                 return None
+                
         return current
     
     def is_html(self, text: str) -> bool:
-        # Simple check if content is HTML
+        # Check if content is HTML
         return bool(re.search(r'<[^>]+>', text))
     
     def extract_text_from_html(self, html: str) -> List[Dict[str, Any]]:
@@ -99,18 +268,222 @@ class FieldMapper:
         
         for element in soup.find_all(text=True):
             if element.strip():
-                parent = element.parent.name if element.parent else None
                 text_nodes.append({
                     'text': element.strip(),
-                    'path': self._get_element_path(element)
+                    'path': self._get_element_path(element),
+                    'parent_tag': element.parent.name if element.parent else None,
+                    'parent_attrs': element.parent.attrs if element.parent else {}
                 })
         
         return text_nodes
     
     def _get_element_path(self, element) -> str:
         # Generate a path to the element for reassembly
-        # Simplified implementation
-        return ''
+        path = []
+        parent = element.parent
+        while parent:
+            siblings = parent.find_all(parent.name, recursive=False)
+            if len(siblings) > 1:
+                index = siblings.index(parent)
+                path.append(f"{parent.name}[{index}]")
+            else:
+                path.append(parent.name)
+            parent = parent.parent
+        return "." + ".".join(reversed(path))
+        
+    def reassemble_html(self, original_html: str, translated_nodes: List[Dict[str, Any]]) -> str:
+        # Reassemble HTML with translated text nodes
+        soup = BeautifulSoup(original_html, 'html.parser')
+        
+        for node in translated_nodes:
+            path = node['path']
+            translated_text = node['translated_text']
+            
+            # Find the element using the path and update it
+            # Implementation depends on how paths are structured
+            # This is a simplified version
+            elements = soup.select(path)
+            if elements:
+                elements[0].string = translated_text
+                
+        return str(soup)
+    
+    def process_ai_structured_data(self, structured_data: Dict[str, Any], field_config: Dict[str, Any]) -> Dict[str, Any]:
+        # Process structured data from AI providers
+        result = {}
+        
+        # Handle different AI provider formats
+        if "translations" in structured_data:
+            # Format: {"translations": [{"text": "...", "detected_language": "...", "to": "..."}]}
+            translations = structured_data.get("translations", [])
+            for i, translation in enumerate(translations):
+                if i < len(field_config.get("field_paths", [])):
+                    path = field_config["field_paths"][i]
+                    result[path] = {
+                        "value": translation.get("text", ""),
+                        "type": field_config.get("field_types", {}).get(path, FieldType.TEXT.value),
+                        "metadata": {
+                            "detected_language": translation.get("detected_language"),
+                            "target_language": translation.get("to")
+                        }
+                    }
+        elif "choices" in structured_data:
+            # Format used by some AI providers with choices array
+            choices = structured_data.get("choices", [])
+            if choices and "message" in choices[0]:
+                content = choices[0].get("message", {}).get("content", "")
+                # Try to parse as JSON if it looks like JSON
+                if content.strip().startswith("{") and content.strip().endswith("}"):
+                    try:
+                        parsed = json.loads(content)
+                        for path in field_config.get("field_paths", []):
+                            if path in parsed:
+                                result[path] = {
+                                    "value": parsed[path],
+                                    "type": field_config.get("field_types", {}).get(path, FieldType.TEXT.value),
+                                    "metadata": {}
+                                }
+                    except json.JSONDecodeError:
+                        # Not valid JSON, treat as single text
+                        if field_config.get("field_paths"):
+                            result[field_config["field_paths"][0]] = {
+                                "value": content,
+                                "type": FieldType.TEXT.value,
+                                "metadata": {}
+                            }
+        
+        return result
+        
+    def handle_directus_relations(self, content: Dict[str, Any], field_config: Dict[str, Any]) -> Dict[str, Any]:
+        # Process Directus relation fields
+        result = {}
+        relation_fields = [path for path, type_info in field_config.get("field_types", {}).items() 
+                          if type_info == FieldType.RELATION.value]
+        
+        for path in relation_fields:
+            relation_data = self._get_nested_value(content, path)
+            if relation_data:
+                # Handle different relation types (o2m, m2o, m2m)
+                if isinstance(relation_data, list):
+                    # o2m or m2m relation
+                    result[path] = [item["id"] for item in relation_data if "id" in item]
+                elif isinstance(relation_data, dict) and "id" in relation_data:
+                    # m2o relation
+                    result[path] = relation_data["id"]
+                    
+        return result
+    
+    def handle_directus_translations(self, content: Dict[str, Any], field_config: Dict[str, Any], 
+                                    language: str) -> Dict[str, Any]:
+        # Handle Directus translation patterns
+        translation_pattern = field_config.get("directus_translation_pattern", 
+                                             DirectusTranslationPattern.COLLECTION_TRANSLATIONS.value)
+        
+        if translation_pattern == DirectusTranslationPattern.COLLECTION_TRANSLATIONS.value:
+            # Standard Directus pattern: collection_translations table with languages
+            return self._handle_collection_translations(content, field_config, language)
+        elif translation_pattern == DirectusTranslationPattern.LANGUAGE_COLLECTIONS.value:
+            # Language-specific collections pattern
+            return self._handle_language_collections(content, field_config, language)
+        else:
+            # Custom pattern, use regular field extraction
+            return self.extract_fields(content, field_config, language)
+    
+    def _handle_collection_translations(self, content: Dict[str, Any], field_config: Dict[str, Any], 
+                                      language: str) -> Dict[str, Any]:
+        # Handle standard Directus translation pattern with collection_translations
+        result = {}
+        primary_collection = field_config.get("primary_collection")
+        
+        if not primary_collection or not content.get("id"):
+            return result
+            
+        # Structure for collection_translations
+        result = {
+            "id": None,  # Will be auto-generated or updated if exists
+            primary_collection + "_id": content.get("id"),
+            "languages_code": language,
+        }
+        
+        # Add translatable fields
+        extracted = self.extract_fields(content, field_config, language)
+        for path, field_data in extracted.items():
+            if "__batch__" not in path:  # Skip batch metadata
+                field_name = path.split(".")[-1]  # Get the field name without path
+                result[field_name] = field_data.get("value")
+                
+        return result
+    
+    def _handle_language_collections(self, content: Dict[str, Any], field_config: Dict[str, Any], 
+                                   language: str) -> Dict[str, Any]:
+        # Handle language-specific collections pattern
+        result = {}
+        primary_collection = field_config.get("primary_collection")
+        
+        if not primary_collection or not content.get("id"):
+            return result
+            
+        # Structure for language collections (e.g., articles_en, articles_fr)
+        result = {
+            "id": content.get("id"),  # Same ID as primary content
+        }
+        
+        # Add translatable fields
+        extracted = self.extract_fields(content, field_config, language)
+        for path, field_data in extracted.items():
+            if "__batch__" not in path:  # Skip batch metadata
+                field_name = path.split(".")[-1]  # Get the field name without path
+                result[field_name] = field_data.get("value")
+                
+        return result
+        
+    def sanitize_content(self, content: Dict[str, Any], field_config: Dict[str, Any]) -> Dict[str, Any]:
+        # Sanitize content before processing
+        sanitized = {}
+        
+        for path, field_data in content.items():
+            if path == "__batch__":
+                # Handle batch data
+                batch_text = field_data.get("text", [])
+                batch_mapping = field_data.get("mapping", {})
+                sanitized_batch = []
+                
+                for text in batch_text:
+                    if isinstance(text, str):
+                        if self.is_html(text):
+                            # Sanitize HTML content
+                            soup = BeautifulSoup(text, 'html.parser')
+                            for script in soup(["script", "style"]):
+                                script.decompose()
+                            sanitized_batch.append(str(soup))
+                        else:
+                            sanitized_batch.append(text)
+                    else:
+                        sanitized_batch.append(text)
+                        
+                sanitized["__batch__"] = {
+                    "text": sanitized_batch,
+                    "mapping": batch_mapping
+                }
+            else:
+                value = field_data.get("value")
+                field_type = field_data.get("type")
+                
+                if field_type == FieldType.WYSIWYG.value and isinstance(value, str):
+                    # Sanitize HTML content
+                    soup = BeautifulSoup(value, 'html.parser')
+                    # Remove potentially dangerous tags/attributes
+                    for script in soup(["script", "style"]):
+                        script.decompose()
+                    sanitized[path] = {
+                        "value": str(soup),
+                        "type": field_type,
+                        "metadata": field_data.get("metadata", {})
+                    }
+                else:
+                    sanitized[path] = field_data
+                    
+        return sanitized
 ```
 
 # Test Strategy:
@@ -121,3 +494,20 @@ class FieldMapper:
 5. Validate HTML content extraction and reassembly
 6. Test with different content structures
 7. Verify handling of missing fields
+8. Test Directus collection structure support
+9. Verify translation collection handling
+10. Test field type detection for various content types
+11. Validate RTL language field mapping
+12. Test content sanitization and validation
+13. Verify relation field handling
+14. Test metadata preservation during translation process
+15. Validate custom field transformations
+16. Test with real Directus collection examples
+17. Verify HTML structure preservation during translation
+18. Test standard Directus translation structure (collection_translations)
+19. Verify language collections handling in Directus
+20. Test structured data processing from AI providers
+21. Validate batch operations for multiple collection fields
+22. Test performance of batch vs. individual field processing
+23. Verify correct handling of different Directus translation patterns
+24. Test with complex nested Directus structures
