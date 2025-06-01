@@ -2,12 +2,13 @@
 Flexible translation service for dynamic provider/model selection.
 """
 import asyncio
+import copy
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from .translation_provider import (
-    TranslationProvider, 
-    TranslationResult, 
-    ProviderError, 
+    TranslationProvider,
+    TranslationResult,
+    ProviderError,
     TranslationError,
     LanguageDirection
 )
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class FlexibleTranslationService:
     """Flexible translation service with dynamic provider/model selection."""
-    
+
     def __init__(self):
         """Initialize the translation service with all available providers."""
         self._providers = {
@@ -30,12 +31,15 @@ class FlexibleTranslationService:
             "mistral": MistralProvider(),
             "deepseek": DeepSeekProvider()
         }
-        logger.info(f"Initialized FlexibleTranslationService with providers: {list(self._providers.keys())}")
-    
+        logger.info(
+            f"Initialized FlexibleTranslationService with providers: "
+            f"{list(self._providers.keys())}"
+        )
+
     def get_available_providers(self) -> List[str]:
         """Get list of available provider names."""
         return list(self._providers.keys())
-    
+
     def get_provider_models(self) -> Dict[str, Dict[str, Any]]:
         """Get available models for each provider."""
         return {
@@ -72,12 +76,12 @@ class FlexibleTranslationService:
                 "default": "deepseek-chat"
             }
         }
-    
+
     async def translate(
-        self, 
-        text: str, 
-        source_lang: str, 
-        target_lang: str, 
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
         provider: str,
         api_key: str,
         model: Optional[str] = None,
@@ -85,7 +89,7 @@ class FlexibleTranslationService:
     ) -> TranslationResult:
         """
         Translate text using specified provider and model.
-        
+
         Args:
             text: Text to translate
             source_lang: Source language code (e.g., 'en')
@@ -94,44 +98,46 @@ class FlexibleTranslationService:
             api_key: API key for the specified provider
             model: Model name (optional, uses default if not specified)
             context: Optional context for better translation
-            
+
         Returns:
             TranslationResult with translated text and metadata
-            
+
         Raises:
             TranslationError: If translation fails
         """
         if not text.strip():
             raise TranslationError("Empty text provided for translation")
-        
+
         if provider not in self._providers:
-            raise TranslationError(f"Unknown provider: {provider}. Available: {list(self._providers.keys())}")
-        
+            raise TranslationError(
+                f"Unknown provider: {provider}. Available: {list(self._providers.keys())}"
+            )
+
         translation_provider = self._providers[provider]
-        
+
         # Check language support
         if not translation_provider.supports_language_pair(source_lang, target_lang):
             raise TranslationError(f"Provider {provider} does not support language pair {source_lang}->{target_lang}")
-        
+
         try:
             logger.info(f"Translating with {provider} (model: {model or 'default'})")
-            
+
             # For providers that support model specification, we'll update them to handle it
             translated_text = await translation_provider.translate(
-                text, 
-                source_lang, 
-                target_lang, 
+                text,
+                source_lang,
+                target_lang,
                 api_key,
                 context
             )
-            
-            # Assess translation quality
-            quality_score = await translation_provider.assess_translation_quality(
+
+            # Assess translation quality (now synchronous)
+            quality_score = translation_provider.assess_translation_quality(
                 text, translated_text, source_lang, target_lang
             )
-            
+
             logger.info(f"Translation successful with {provider} (quality: {quality_score:.2f})")
-            
+
             return TranslationResult(
                 translated_text=translated_text,
                 provider_used=provider,
@@ -145,18 +151,18 @@ class FlexibleTranslationService:
                     "provider_info": self.get_provider_models().get(provider, {})
                 }
             )
-            
+
         except ProviderError as e:
             logger.error(f"Provider {provider} failed: {str(e)}")
             raise TranslationError(f"Translation failed with {provider}: {str(e)}")
         except Exception as e:
             logger.error(f"Unexpected error with {provider}: {str(e)}")
             raise TranslationError(f"Unexpected error with {provider}: {str(e)}")
-    
+
     async def batch_translate(
-        self, 
-        texts: List[str], 
-        source_lang: str, 
+        self,
+        texts: List[str],
+        source_lang: str,
         target_lang: str,
         provider: str,
         api_key: str,
@@ -165,7 +171,7 @@ class FlexibleTranslationService:
     ) -> List[TranslationResult]:
         """
         Translate multiple texts using specified provider and model.
-        
+
         Args:
             texts: List of texts to translate
             source_lang: Source language code
@@ -174,39 +180,48 @@ class FlexibleTranslationService:
             api_key: API key for the specified provider
             model: Model name (optional)
             context: Optional context for better translation
-            
+
         Returns:
             List of TranslationResult objects
-            
+
         Raises:
             TranslationError: If translation fails
         """
         if not texts:
             return []
-        
+
         if provider not in self._providers:
-            raise TranslationError(f"Unknown provider: {provider}. Available: {list(self._providers.keys())}")
-        
+            raise TranslationError(
+                f"Unknown provider: {provider}. Available: {list(self._providers.keys())}"
+            )
+
         translation_provider = self._providers[provider]
-        
+
         # Check language support
         if not translation_provider.supports_language_pair(source_lang, target_lang):
             raise TranslationError(f"Provider {provider} does not support language pair {source_lang}->{target_lang}")
-        
+
         try:
             logger.info(f"Batch translating {len(texts)} texts with {provider} (model: {model or 'default'})")
-            
+
             translated_texts = await translation_provider.batch_translate(
                 texts, source_lang, target_lang, api_key, context
             )
+
+            # Create quality assessment scores (now synchronous)
+            quality_scores = [
+                translation_provider.assess_translation_quality(
+                    original, translated, source_lang, target_lang
+                )
+                for original, translated in zip(texts, translated_texts)
+            ]
             
             # Create results for each translation
             results = []
-            for i, (original, translated) in enumerate(zip(texts, translated_texts)):
-                quality_score = await translation_provider.assess_translation_quality(
-                    original, translated, source_lang, target_lang
-                )
-                
+            for i, (original, translated, quality_score) in enumerate(
+                zip(texts, translated_texts, quality_scores)
+            ):
+
                 results.append(TranslationResult(
                     translated_text=translated,
                     provider_used=provider,
@@ -222,71 +237,71 @@ class FlexibleTranslationService:
                         "provider_info": self.get_provider_models().get(provider, {})
                     }
                 ))
-            
+
             logger.info(f"Batch translation successful with {provider}")
             return results
-            
+
         except ProviderError as e:
             logger.error(f"Batch translation failed with {provider}: {str(e)}")
             raise TranslationError(f"Batch translation failed with {provider}: {str(e)}")
         except Exception as e:
             logger.error(f"Unexpected error in batch translation with {provider}: {str(e)}")
             raise TranslationError(f"Unexpected error in batch translation with {provider}: {str(e)}")
-    
+
     async def validate_api_key(self, provider: str, api_key: str) -> bool:
         """
         Validate API key for a specific provider.
-        
+
         Args:
             provider: Provider name
             api_key: API key to validate
-            
+
         Returns:
             True if valid, False otherwise
         """
         if provider not in self._providers:
             return False
-        
+
         try:
             return await self._providers[provider].validate_api_key(api_key)
         except Exception as e:
             logger.error(f"Error validating API key for {provider}: {str(e)}")
             return False
-    
+
     def get_supported_languages(self, provider: str) -> List[str]:
         """
         Get supported languages for a specific provider.
-        
+
         Args:
             provider: Provider name
-            
+
         Returns:
             List of supported language codes
         """
         if provider not in self._providers:
             return []
-        
+
         return self._providers[provider].get_supported_languages()
-    
+
     def get_language_direction(self, lang_code: str) -> LanguageDirection:
         """
         Get language direction for a language code.
-        
+
         Args:
             lang_code: Language code (e.g., 'ar', 'en', 'bs')
-            
+
         Returns:
             LanguageDirection (LTR or RTL)
         """
         # Use any provider's implementation (they should all be the same)
         return list(self._providers.values())[0].get_language_direction(lang_code)
-    
+
     async def translate_collection(
-        self, 
-        collection_data: Dict[str, Any], 
+        self,
+        collection_data: Dict[str, Any],
         field_mapping: Dict[str, str],
-        source_lang: str, 
-        target_lang: str, 
+        source_lang: str,
+        target_lang: str,
         provider: str,
         api_key: str,
         model: Optional[str] = None,
@@ -294,7 +309,7 @@ class FlexibleTranslationService:
     ) -> Dict[str, Any]:
         """
         Translate a Directus collection using specified provider and model.
-        
+
         Args:
             collection_data: Collection data from Directus
             field_mapping: Mapping of field names to translate
@@ -304,33 +319,33 @@ class FlexibleTranslationService:
             api_key: API key for the specified provider
             model: Model name (optional)
             context: Optional context for translation
-            
+
         Returns:
             Translated collection data
         """
-        translated_data = collection_data.copy()
-        
+        translated_data = copy.deepcopy(collection_data)
+
         for field_name, field_path in field_mapping.items():
             if field_path in collection_data:
                 text_to_translate = collection_data[field_path]
-                
+
                 if isinstance(text_to_translate, str) and text_to_translate.strip():
                     try:
                         result = await self.translate(
-                            text_to_translate, 
-                            source_lang, 
-                            target_lang, 
+                            text_to_translate,
+                            source_lang,
+                            target_lang,
                             provider,
                             api_key,
                             model,
                             context
                         )
                         translated_data[field_path] = result.translated_text
-                        
+
                         # Add metadata for translation tracking
                         if "_translations" not in translated_data:
                             translated_data["_translations"] = {}
-                        
+
                         translated_data["_translations"][field_path] = {
                             "provider": result.provider_used,
                             "model": result.metadata.get("model_used"),
@@ -338,10 +353,10 @@ class FlexibleTranslationService:
                             "source_lang": source_lang,
                             "target_lang": target_lang
                         }
-                        
+
                     except TranslationError as e:
                         logger.error(f"Failed to translate field {field_path}: {str(e)}")
                         # Keep original text if translation fails
                         continue
-        
+
         return translated_data

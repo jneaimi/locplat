@@ -1,14 +1,13 @@
 """
 Anthropic Claude provider for translation services.
 """
-import asyncio
 from typing import List, Optional
 import anthropic
 from anthropic import AsyncAnthropic
-from .translation_provider import TranslationProvider, ProviderError
+from .translation_provider import BaseAsyncProvider, ProviderError
 
 
-class AnthropicProvider(TranslationProvider):
+class AnthropicProvider(BaseAsyncProvider):
     """Anthropic Claude translation provider."""
     
     def __init__(self):
@@ -51,35 +50,7 @@ class AnthropicProvider(TranslationProvider):
         except anthropic.APIError as e:
             raise ProviderError(self.name, f"API error: {str(e)}", e)
         except Exception as e:
-            raise ProviderError(self.name, f"Unexpected error: {str(e)}", e)
-    
-    async def batch_translate(
-        self, 
-        texts: List[str], 
-        source_lang: str, 
-        target_lang: str, 
-        api_key: str,
-        context: Optional[str] = None
-    ) -> List[str]:
-        """Translate multiple texts using Anthropic Claude."""
-        if not texts:
-            return []
-        
-        tasks = [
-            self.translate(text, source_lang, target_lang, api_key, context)
-            for text in texts
-        ]
-        
-        try:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            translations = []
-            for result in results:
-                if isinstance(result, Exception):
-                    raise result
-                translations.append(result)
-            return translations
-        except Exception as e:
-            raise ProviderError(self.name, f"Batch translation failed: {str(e)}", e)
+            raise ProviderError(self.name, f"Unexpected error: {str(e)}", e) from e
     
     async def validate_api_key(self, api_key: str) -> bool:
         """Validate Anthropic API key."""
@@ -93,14 +64,20 @@ class AnthropicProvider(TranslationProvider):
             return True
         except anthropic.AuthenticationError:
             return False
-        except Exception:
+        except (anthropic.APIError, anthropic.RateLimitError, anthropic.APIConnectionError):
             return False
     
     def get_supported_languages(self) -> List[str]:
         """Get supported language codes."""
         return self.supported_languages.copy()
     
-    def _create_anthropic_prompt(self, text: str, source_lang: str, target_lang: str, context: Optional[str] = None) -> str:
+    def _create_anthropic_prompt(
+        self, 
+        text: str, 
+        source_lang: str, 
+        target_lang: str, 
+        context: Optional[str] = None
+    ) -> str:
         """Create optimized prompt for Anthropic Claude."""
         base_prompt = self.optimize_prompt_for_provider(text, source_lang, target_lang, context)
         # Claude-specific enhancement

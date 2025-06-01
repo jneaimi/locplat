@@ -1,14 +1,13 @@
 """
 OpenAI GPT provider for translation services.
 """
-import asyncio
 from typing import List, Optional
 import openai
 from openai import AsyncOpenAI
-from .translation_provider import TranslationProvider, ProviderError
+from .translation_provider import BaseAsyncProvider, ProviderError
 
 
-class OpenAIProvider(TranslationProvider):
+class OpenAIProvider(BaseAsyncProvider):
     """OpenAI GPT translation provider."""
     
     def __init__(self):
@@ -42,8 +41,7 @@ class OpenAIProvider(TranslationProvider):
                 ],
                 temperature=0.3,
                 max_tokens=2000
-            )
-            
+            )            
             translation = response.choices[0].message.content.strip()
             if not translation:
                 raise ProviderError(self.name, "Empty translation response")
@@ -56,36 +54,7 @@ class OpenAIProvider(TranslationProvider):
         except openai.APIError as e:
             raise ProviderError(self.name, f"API error: {str(e)}", e)
         except Exception as e:
-            raise ProviderError(self.name, f"Unexpected error: {str(e)}", e)
-    
-    async def batch_translate(
-        self, 
-        texts: List[str], 
-        source_lang: str, 
-        target_lang: str, 
-        api_key: str,
-        context: Optional[str] = None
-    ) -> List[str]:
-        """Translate multiple texts using OpenAI GPT."""
-        if not texts:
-            return []
-        
-        # For batch operations, use concurrent translation
-        tasks = [
-            self.translate(text, source_lang, target_lang, api_key, context)
-            for text in texts
-        ]
-        
-        try:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            translations = []
-            for result in results:
-                if isinstance(result, Exception):
-                    raise result
-                translations.append(result)
-            return translations
-        except Exception as e:
-            raise ProviderError(self.name, f"Batch translation failed: {str(e)}", e)
+            raise ProviderError(self.name, f"Unexpected error: {str(e)}", e) from e
     
     async def validate_api_key(self, api_key: str) -> bool:
         """Validate OpenAI API key."""
@@ -99,13 +68,19 @@ class OpenAIProvider(TranslationProvider):
             return True
         except openai.AuthenticationError:
             return False
-        except Exception:
+        except (openai.APIError, openai.RateLimitError, openai.APIConnectionError):
             return False
     
     def get_supported_languages(self) -> List[str]:
         """Get supported language codes."""
         return self.supported_languages.copy()
     
-    def _create_openai_prompt(self, text: str, source_lang: str, target_lang: str, context: Optional[str] = None) -> str:
+    def _create_openai_prompt(
+        self, 
+        text: str, 
+        source_lang: str, 
+        target_lang: str, 
+        context: Optional[str] = None
+    ) -> str:
         """Create optimized prompt for OpenAI."""
         return self.optimize_prompt_for_provider(text, source_lang, target_lang, context)

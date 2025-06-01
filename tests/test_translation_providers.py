@@ -2,9 +2,7 @@
 Basic tests for the translation provider system.
 """
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, patch
-from app.services.translation_provider import TranslationError, ProviderError
+from unittest.mock import AsyncMock
 from app.services.openai_provider import OpenAIProvider
 from app.services.provider_router import ProviderRouter
 

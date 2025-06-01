@@ -20,7 +20,7 @@ async def health_check():
         # TODO: Add actual service health checks
         # - Database connection check
         # - Redis connection check
-        
+
         return HealthResponse(
             status="ok",
             timestamp=time.time(),
