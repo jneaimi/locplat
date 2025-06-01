@@ -1,81 +1,93 @@
-# LocPlat - Multi-Language Localization Platform
+# LocPlat - Simple AI Translation Service
 
-## Project Overview
-LocPlat is a modern, scalable localization platform designed to provide enterprise-grade translation services with support for multiple AI providers, intelligent caching, and dynamic field mapping.
+## Overview
+LocPlat is a simple AI-powered translation service designed for Directus CMS. It translates English content to Arabic (RTL) and Bosnian (Latin/Cyrillic) using OpenAI and Google Translate with client-provided credentials.
 
-## Key Features
-- **Multi-Language Support**: English, Arabic (RTL), Bosnian (Latin/Cyrillic)
-- **Multi-Provider AI**: OpenAI, Anthropic, Google Translate, Azure, DeepL
-- **Client-Side Credentials**: Secure, zero-knowledge AI credential handling
-- **Intelligent Caching**: Multi-level caching for performance optimization
-- **Dynamic Field Mapping**: Runtime-configurable translatable field definitions
-- **Directus Integration**: Optimized for Directus CMS workflows
-
-## Technology Stack
-- **Backend**: FastAPI (Python) with async/await
-- **Databases**: PostgreSQL (transactional), MongoDB (configuration)
-- **Cache**: Redis Cluster
-- **Queue**: RabbitMQ for async processing
-- **Containers**: Docker with Kubernetes
-- **Monitoring**: Prometheus, Grafana, OpenTelemetry
+## Features
+- **Security First**: Client-provided AI keys per request (never stored)
+- **Multiple Providers**: OpenAI (primary) + Google Translate (fallback)
+- **Dynamic Fields**: Basic API-configurable field mapping
+- **Performance**: Redis caching for cost control
+- **Multi-language**: English → Arabic/Bosnian
+- **RTL Support**: Proper Arabic text handling
+- **Docker Ready**: Coolify compatible deployment
 
 ## Architecture
-The platform follows a microservices architecture with the following core services:
+- Single FastAPI service
+- PostgreSQL for data persistence
+- Redis for caching
+- Docker-based deployment
 
-1. **Translation Orchestrator** - Main workflow coordinator
-2. **AI Provider Adapter** - Unified interface for multiple AI providers
-3. **Language Registry** - Language profiles and configurations
-4. **Field Mapper** - Dynamic field discovery and mapping
-5. **Cache Manager** - Multi-level caching system
-6. **Quality Validator** - Translation quality assessment
-7. **Security Manager** - Credential handling and audit logging
-8. **Analytics Engine** - Metrics and performance monitoring
+## Quick Start
 
-## Development Phases
-- **Phase 1**: Core Foundation (6-8 weeks)
-- **Phase 2**: Multi-Provider Ecosystem (6-8 weeks)
-- **Phase 3**: Enterprise Features (8-10 weeks)
-- **Phase 4**: Advanced Capabilities (8-10 weeks)
+### Prerequisites
+- Docker and Docker Compose
+- Python 3.9+
 
-## Getting Started
-1. Clone the repository
-2. Initialize Task Master: `taskmaster init`
-3. Start with Task #1: "Setup Core Project Infrastructure"
-4. Follow the dependency chain for optimal development flow
+### Development Setup
 
-## Task Management
-This project uses Task Master for project management. Key commands:
-- `taskmaster next` - Get the next task to work on
-- `taskmaster status <id> <status>` - Update task status
-- `taskmaster get <id>` - Get detailed task information
-- `taskmaster tasks` - View all tasks
+1. Clone the repository:
+```bash
+git clone https://github.com/jneaimi/locplat.git
+cd locplat
+```
 
-## Current Status
-Project initialized with comprehensive PRD and 13 main tasks with detailed subtasks.
-Ready to begin development with Task #1.
+2. Copy environment file:
+```bash
+cp .env.example .env
+```
 
-**New Addition**: Task #13 - Coolify Deployment Configuration for easy deployment!
+3. Start with Docker Compose:
+```bash
+docker-compose up -d
+```
 
-## Documentation
-- `/scripts/prd.txt` - Complete Product Requirements Document
-- `/tasks/` - Individual task files with detailed specifications
-- `/docs/` - Technical documentation (to be created)
+4. Access the API:
+- Health Check: http://localhost:8000/health
+- API Documentation: http://localhost:8000/docs
 
-## Support Languages (Initial)
-- **English** (en) - Source language, international variant
-- **Arabic** (ar) - RTL support, formal register, cultural context
-- **Bosnian** (bs) - Latin script primary, optional Cyrillic support
+## API Usage
 
-## AI Providers (Planned)
-- **OpenAI** - GPT-4, GPT-3.5 (Primary for Arabic & English)
-- **Anthropic** - Claude-3 models (High accuracy)
-- **Google Translate** - V3 API (Cost-effective, wide language support)
-- **Azure Translator** - Enterprise features, compliance
-- **DeepL** - European languages, natural sounding
+### Health Check
+```bash
+curl http://localhost:8000/health
+```
 
-## Security & Compliance
-- Zero-knowledge credential architecture
-- Client-side AI API key management
-- Comprehensive audit logging
-- GDPR and SOC 2 compliance ready
-- End-to-end encryption for data in transit
+### Translation (Coming Soon)
+```bash
+curl -X POST http://localhost:8000/translate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello, world!",
+    "target_language": "ar",
+    "openai_key": "your-openai-key"
+  }'
+```
+
+## Supported Languages
+- **Arabic (ar)**: Full RTL support with cultural sensitivity
+- **Bosnian (bs)**: Latin and Cyrillic script support
+
+## Tech Stack
+- **Backend**: FastAPI
+- **Database**: PostgreSQL
+- **Cache**: Redis
+- **Deployment**: Docker + Coolify
+- **AI Providers**: OpenAI, Google Translate
+
+## Security
+- API keys are provided per request and never stored
+- Request validation and sanitization
+- Rate limiting and caching for cost control
+
+## Contributing
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## License
+MIT License - see LICENSE file for details
+
+## Support
+For issues and questions, please use the GitHub Issues page.

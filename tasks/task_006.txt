@@ -1,0 +1,150 @@
+# Task ID: 6
+# Title: Implement Directus Integration
+# Status: pending
+# Dependencies: 5
+# Priority: medium
+# Description: Create specialized endpoints and functionality for Directus CMS integration, including batch translation support and Directus-specific data formatting.
+# Details:
+1. Create Directus-specific data models
+2. Implement batch translation for collections
+3. Add Directus field format handling
+4. Create specialized endpoints for Directus
+
+Directus models:
+```python
+from pydantic import BaseModel, Field
+from typing import Dict, List, Any, Optional
+
+class DirectusItem(BaseModel):
+    id: str
+    collection: str
+    item: Dict[str, Any]
+
+class DirectusBatchRequest(BaseModel):
+    items: List[DirectusItem]
+    target_language: str
+    openai_key: str
+    google_key: str
+    source_language: str = "en"
+    client_id: Optional[str] = None
+
+class DirectusBatchResponse(BaseModel):
+    items: List[Dict[str, Any]]
+    stats: Dict[str, Any]
+```
+
+Directus integration implementation:
+```python
+from fastapi import APIRouter, Depends, HTTPException
+
+directus_router = APIRouter(prefix="/directus", tags=["directus"])
+
+@directus_router.post("/batch", response_model=DirectusBatchResponse)
+async def translate_directus_batch(
+    request: DirectusBatchRequest,
+    translation_service = Depends(get_translation_service)
+):
+    results = []
+    stats = {
+        "total": len(request.items),
+        "successful": 0,
+        "failed": 0,
+        "cache_hits": 0
+    }
+    
+    for item in request.items:
+        try:
+            # Get field config for this collection
+            field_paths = []
+            if request.client_id:
+                field_paths = await translation_service.field_mapper.get_field_config(
+                    request.client_id, item.collection
+                )
+            
+            # Translate the item
+            result = await translation_service.translate_content(
+                content=item.item,
+                source_lang=request.source_language,
+                target_lang=request.target_language,
+                openai_key=request.openai_key,
+                google_key=request.google_key,
+                collection_name=item.collection,
+                client_id=request.client_id
+            )
+            
+            # Add to results
+            results.append({
+                "id": item.id,
+                "collection": item.collection,
+                "item": result["translated_content"]
+            })
+            
+            # Update stats
+            stats["successful"] += 1
+            if result["cache_hit"]:
+                stats["cache_hits"] += 1
+                
+        except Exception as e:
+            stats["failed"] += 1
+            # Log the error
+            print(f"Error translating item {item.id}: {str(e)}")
+    
+    return {
+        "items": results,
+        "stats": stats
+    }
+
+@directus_router.post("/collection/{collection_name}")
+async def configure_directus_collection(
+    collection_name: str,
+    config: Dict[str, Any],
+    field_mapper = Depends(get_field_mapper)
+):
+    # Configure which fields to translate for a Directus collection
+    client_id = config.get("client_id")
+    field_paths = config.get("field_paths", [])
+    
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
+    
+    await field_mapper.save_field_config(
+        client_id=client_id,
+        collection_name=collection_name,
+        field_paths=field_paths
+    )
+    
+    return {"status": "success"}
+
+# Add the router to the main app
+app.include_router(directus_router)
+```
+
+Directus helper functions:
+```python
+def format_directus_response(translated_items, original_items):
+    """Format the response in a way that's easy to use with Directus"""
+    result = []
+    
+    for orig, trans in zip(original_items, translated_items):
+        # Create a new item with the same structure as the original
+        # but with translated content
+        result.append({
+            "id": orig["id"],
+            "collection": orig["collection"],
+            "item": trans["translated_content"]
+        })
+    
+    return result
+```
+
+# Test Strategy:
+1. Test batch translation endpoint with Directus collection data
+2. Verify correct handling of Directus-specific data structures
+3. Test collection configuration endpoint
+4. Validate field mapping works correctly with Directus fields
+5. Test performance with larger batches of items
+6. Verify error handling for partial batch failures
+7. Test with actual Directus API responses
+8. Validate statistics reporting
+9. Test with different collection types and field structures
+10. Verify integration with Directus webhook patterns

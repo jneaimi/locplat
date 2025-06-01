@@ -1,0 +1,58 @@
+# Task ID: 2
+# Title: Implement Translation Provider Integration
+# Status: pending
+# Dependencies: 1
+# Priority: high
+# Description: Create services to integrate with OpenAI (primary) and Google Translate (fallback) translation providers using client-provided API keys.
+# Details:
+1. Create abstract translation provider interface
+2. Implement OpenAI provider using their API
+3. Implement Google Translate provider as fallback
+4. Create provider router to handle fallback logic
+5. Add language pair support (English → Arabic, English → Bosnian)
+
+Provider interface:
+```python
+from abc import ABC, abstractmethod
+from typing import Dict, Any
+
+class TranslationProvider(ABC):
+    @abstractmethod
+    async def translate(self, text: str, source_lang: str, target_lang: str, api_key: str) -> str:
+        pass
+
+class OpenAIProvider(TranslationProvider):
+    async def translate(self, text: str, source_lang: str, target_lang: str, api_key: str) -> str:
+        # OpenAI implementation using their API
+        # Use the provided API key for authentication
+        pass
+
+class GoogleTranslateProvider(TranslationProvider):
+    async def translate(self, text: str, source_lang: str, target_lang: str, api_key: str) -> str:
+        # Google Translate implementation
+        pass
+
+class ProviderRouter:
+    def __init__(self):
+        self.primary = OpenAIProvider()
+        self.fallback = GoogleTranslateProvider()
+    
+    async def translate(self, text: str, source_lang: str, target_lang: str, 
+                        openai_key: str, google_key: str) -> str:
+        try:
+            return await self.primary.translate(text, source_lang, target_lang, openai_key)
+        except Exception as e:
+            # Log the error
+            return await self.fallback.translate(text, source_lang, target_lang, google_key)
+```
+
+Implement GET /languages endpoint to return supported language pairs.
+
+# Test Strategy:
+1. Unit test each provider with mock API responses
+2. Test fallback mechanism when primary provider fails
+3. Verify correct handling of API keys
+4. Test with actual API keys in development environment
+5. Validate supported language pairs
+6. Test error handling for invalid API keys
+7. Measure response times for performance benchmarking

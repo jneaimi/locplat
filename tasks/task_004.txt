@@ -1,0 +1,123 @@
+# Task ID: 4
+# Title: Implement Field Mapping and Content Processing
+# Status: pending
+# Dependencies: 2, 3
+# Priority: medium
+# Description: Create a system to map and process fields for translation, supporting plain text and basic HTML content types with JSON path support.
+# Details:
+1. Implement field mapping configuration storage in PostgreSQL
+2. Create JSON path parser for field selection
+3. Add content type detection and processing (text vs HTML)
+4. Implement field extraction and reassembly logic
+
+Database model:
+```python
+from sqlalchemy import Column, Integer, String, JSON, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+
+Base = declarative_base()
+
+class FieldConfig(Base):
+    __tablename__ = 'field_configs'
+    
+    id = Column(Integer, primary_key=True)
+    client_id = Column(String, nullable=False)
+    collection_name = Column(String, nullable=False)
+    field_paths = Column(JSON, nullable=False)  # JSON array of paths
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+```
+
+Field mapper implementation:
+```python
+from typing import Dict, Any, List
+import re
+from bs4 import BeautifulSoup
+
+class FieldMapper:
+    def __init__(self, db_session):
+        self.db_session = db_session
+    
+    async def get_field_config(self, client_id: str, collection_name: str) -> List[str]:
+        # Get field paths from database
+        config = self.db_session.query(FieldConfig).filter_by(
+            client_id=client_id,
+            collection_name=collection_name
+        ).first()
+        
+        return config.field_paths if config else []
+    
+    async def save_field_config(self, client_id: str, collection_name: str, field_paths: List[str]) -> None:
+        # Save field configuration to database
+        config = self.db_session.query(FieldConfig).filter_by(
+            client_id=client_id,
+            collection_name=collection_name
+        ).first()
+        
+        if config:
+            config.field_paths = field_paths
+            config.updated_at = datetime.utcnow()
+        else:
+            config = FieldConfig(
+                client_id=client_id,
+                collection_name=collection_name,
+                field_paths=field_paths
+            )
+            self.db_session.add(config)
+        
+        self.db_session.commit()
+    
+    def extract_fields(self, content: Dict[str, Any], field_paths: List[str]) -> Dict[str, Any]:
+        # Extract fields to translate based on paths
+        result = {}
+        for path in field_paths:
+            value = self._get_nested_value(content, path)
+            if value:
+                result[path] = value
+        return result
+    
+    def _get_nested_value(self, data: Dict[str, Any], path: str) -> Any:
+        # Get value from nested dictionary using dot notation
+        parts = path.split('.')
+        current = data
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return None
+        return current
+    
+    def is_html(self, text: str) -> bool:
+        # Simple check if content is HTML
+        return bool(re.search(r'<[^>]+>', text))
+    
+    def extract_text_from_html(self, html: str) -> List[Dict[str, Any]]:
+        # Extract text nodes from HTML for translation
+        soup = BeautifulSoup(html, 'html.parser')
+        text_nodes = []
+        
+        for element in soup.find_all(text=True):
+            if element.strip():
+                parent = element.parent.name if element.parent else None
+                text_nodes.append({
+                    'text': element.strip(),
+                    'path': self._get_element_path(element)
+                })
+        
+        return text_nodes
+    
+    def _get_element_path(self, element) -> str:
+        # Generate a path to the element for reassembly
+        # Simplified implementation
+        return ''
+```
+
+# Test Strategy:
+1. Unit test field extraction from nested objects
+2. Test HTML detection and processing
+3. Verify field configuration storage and retrieval
+4. Test JSON path parsing with various path formats
+5. Validate HTML content extraction and reassembly
+6. Test with different content structures
+7. Verify handling of missing fields

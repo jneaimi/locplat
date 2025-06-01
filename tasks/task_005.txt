@@ -1,0 +1,188 @@
+# Task ID: 5
+# Title: Implement Translation API Endpoints
+# Status: pending
+# Dependencies: 2, 3, 4
+# Priority: high
+# Description: Create the main translation API endpoints including the core translation functionality, language pair listing, and field configuration.
+# Details:
+1. Implement POST /translate endpoint
+2. Create GET /languages endpoint
+3. Add POST /fields/config endpoint
+4. Integrate all components (providers, cache, field mapping)
+5. Implement request/response models
+
+API implementation:
+```python
+from fastapi import FastAPI, Depends, HTTPException, Body
+from pydantic import BaseModel, Field
+from typing import Dict, List, Any, Optional
+
+app = FastAPI(title="LocPlat Translation Service")
+
+class TranslationRequest(BaseModel):
+    content: Dict[str, Any]
+    target_language: str
+    openai_key: str
+    google_key: str
+    source_language: str = "en"
+    collection_name: Optional[str] = None
+    client_id: Optional[str] = None
+
+class TranslationResponse(BaseModel):
+    translated_content: Dict[str, Any]
+    source_language: str
+    target_language: str
+    provider_used: str
+    cache_hit: bool
+
+class FieldConfigRequest(BaseModel):
+    client_id: str
+    collection_name: str
+    field_paths: List[str]
+
+class LanguagePair(BaseModel):
+    source: str
+    target: str
+    name: str
+
+@app.post("/translate", response_model=TranslationResponse)
+async def translate_content(
+    request: TranslationRequest,
+    translation_service = Depends(get_translation_service)
+):
+    try:
+        result = await translation_service.translate_content(
+            content=request.content,
+            source_lang=request.source_language,
+            target_lang=request.target_language,
+            openai_key=request.openai_key,
+            google_key=request.google_key,
+            collection_name=request.collection_name,
+            client_id=request.client_id
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/languages", response_model=List[LanguagePair])
+async def get_languages():
+    return [
+        {"source": "en", "target": "ar", "name": "English to Arabic"},
+        {"source": "en", "target": "bs", "name": "English to Bosnian"}
+    ]
+
+@app.post("/fields/config")
+async def configure_fields(
+    config: FieldConfigRequest,
+    field_mapper = Depends(get_field_mapper)
+):
+    await field_mapper.save_field_config(
+        client_id=config.client_id,
+        collection_name=config.collection_name,
+        field_paths=config.field_paths
+    )
+    return {"status": "success"}
+```
+
+Translation service implementation:
+```python
+class TranslationService:
+    def __init__(self, provider_router, cache, field_mapper):
+        self.provider_router = provider_router
+        self.cache = cache
+        self.field_mapper = field_mapper
+    
+    async def translate_content(
+        self, content, source_lang, target_lang, openai_key, google_key, 
+        collection_name=None, client_id=None
+    ):
+        # Get field paths if collection_name and client_id provided
+        field_paths = []
+        if collection_name and client_id:
+            field_paths = await self.field_mapper.get_field_config(client_id, collection_name)
+        
+        # If no specific fields configured, translate all string fields
+        if not field_paths:
+            field_paths = self._find_string_fields(content)
+        
+        # Extract fields to translate
+        fields_to_translate = self.field_mapper.extract_fields(content, field_paths)
+        
+        # Create result copy
+        result = content.copy()
+        cache_hit = False
+        provider_used = "openai"
+        
+        # Process each field
+        for path, value in fields_to_translate.items():
+            if not isinstance(value, str):
+                continue
+                
+            # Check cache
+            cached = await self.cache.get_cached_translation(value, source_lang, target_lang)
+            if cached:
+                translated = cached
+                cache_hit = True
+            else:
+                # Translate with provider router
+                translated = await self.provider_router.translate(
+                    value, source_lang, target_lang, openai_key, google_key
+                )
+                # Cache result
+                await self.cache.cache_translation(value, source_lang, target_lang, translated)
+                
+                # Determine which provider was used (simplified)
+                if hasattr(self.provider_router, 'last_provider_used'):
+                    provider_used = self.provider_router.last_provider_used
+            
+            # Update result
+            self._set_nested_value(result, path, translated)
+        
+        return {
+            "translated_content": result,
+            "source_language": source_lang,
+            "target_language": target_lang,
+            "provider_used": provider_used,
+            "cache_hit": cache_hit
+        }
+    
+    def _find_string_fields(self, content, prefix=""):
+        # Recursively find all string fields in the content
+        fields = []
+        if isinstance(content, dict):
+            for key, value in content.items():
+                path = f"{prefix}.{key}" if prefix else key
+                if isinstance(value, str):
+                    fields.append(path)
+                elif isinstance(value, dict) or isinstance(value, list):
+                    fields.extend(self._find_string_fields(value, path))
+        elif isinstance(content, list):
+            for i, item in enumerate(content):
+                path = f"{prefix}[{i}]"
+                fields.extend(self._find_string_fields(item, path))
+        return fields
+    
+    def _set_nested_value(self, data, path, value):
+        # Set value in nested dictionary using dot notation
+        parts = path.split('.')
+        current = data
+        for i, part in enumerate(parts):
+            if i == len(parts) - 1:
+                current[part] = value
+            else:
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+```
+
+# Test Strategy:
+1. Test POST /translate with various content structures
+2. Verify correct handling of API keys
+3. Test caching behavior and hit rate
+4. Validate field mapping functionality
+5. Test error handling and fallback to Google Translate
+6. Verify language pair endpoint returns correct data
+7. Test field configuration endpoint
+8. Perform integration tests with all components
+9. Benchmark API response times
+10. Test with actual Directus content structures
