@@ -13,7 +13,7 @@ from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
 from .mistral_provider import MistralProvider
 from .deepseek_provider import DeepSeekProvider
-from .provider_router import ProviderRouter
+from .flexible_translation_service import FlexibleTranslationService
 
 __all__ = [
     "TranslationProvider",
@@ -26,5 +26,5 @@ __all__ = [
     "AnthropicProvider", 
     "MistralProvider",
     "DeepSeekProvider",
-    "ProviderRouter"
+    "FlexibleTranslationService"
 ]

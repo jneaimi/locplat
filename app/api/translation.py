@@ -1,24 +1,27 @@
 """
-Translation API endpoints for LocPlat service.
+Translation API endpoints for LocPlat service - Flexible provider/model selection.
 """
 from typing import Dict, List, Optional, Any
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, validator
-from ..services import ProviderRouter, TranslationError, LanguageDirection
+from ..services.flexible_translation_service import FlexibleTranslationService
+from ..services import TranslationError, LanguageDirection
 
 router = APIRouter(prefix="/translate", tags=["translation"])
 
-# Initialize the provider router
-provider_router = ProviderRouter()
+# Initialize the flexible translation service
+translation_service = FlexibleTranslationService()
 
 
-class TranslationRequest(BaseModel):
-    """Request model for single text translation."""
+class FlexibleTranslationRequest(BaseModel):
+    """Request model for flexible translation with provider/model selection."""
     text: str = Field(..., description="Text to translate", min_length=1, max_length=10000)
     source_lang: str = Field(..., description="Source language code (e.g., 'en')")
     target_lang: str = Field(..., description="Target language code (e.g., 'ar', 'bs')")
+    provider: str = Field(..., description="AI provider ('openai', 'anthropic', 'mistral', 'deepseek')")
+    api_key: str = Field(..., description="API key for the specified provider")
+    model: Optional[str] = Field(None, description="Model name (optional, uses provider default)")
     context: Optional[str] = Field(None, description="Optional context for better translation")
-    api_keys: Dict[str, str] = Field(..., description="Provider API keys")
     
     @validator('source_lang', 'target_lang')
     def validate_language_codes(cls, v):
@@ -27,22 +30,24 @@ class TranslationRequest(BaseModel):
             raise ValueError("Language codes must be 2 characters long")
         return v.lower()
     
-    @validator('api_keys')
-    def validate_api_keys(cls, v):
-        """Validate that at least one API key is provided."""
-        if not v or not any(v.values()):
-            raise ValueError("At least one API key must be provided")
-        return v
+    @validator('provider')
+    def validate_provider(cls, v):
+        """Validate provider name."""
+        valid_providers = ["openai", "anthropic", "mistral", "deepseek"]
+        if v.lower() not in valid_providers:
+            raise ValueError(f"Provider must be one of: {valid_providers}")
+        return v.lower()
 
 
-
-class BatchTranslationRequest(BaseModel):
-    """Request model for batch text translation."""
+class FlexibleBatchTranslationRequest(BaseModel):
+    """Request model for flexible batch translation."""
     texts: List[str] = Field(..., description="List of texts to translate", min_items=1, max_items=100)
     source_lang: str = Field(..., description="Source language code")
     target_lang: str = Field(..., description="Target language code") 
+    provider: str = Field(..., description="AI provider name")
+    api_key: str = Field(..., description="API key for the specified provider")
+    model: Optional[str] = Field(None, description="Model name (optional)")
     context: Optional[str] = Field(None, description="Optional context for better translation")
-    api_keys: Dict[str, str] = Field(..., description="Provider API keys")
     
     @validator('texts')
     def validate_texts(cls, v):
@@ -60,12 +65,21 @@ class BatchTranslationRequest(BaseModel):
         if len(v) != 2:
             raise ValueError("Language codes must be 2 characters long")
         return v.lower()
+    
+    @validator('provider')
+    def validate_provider(cls, v):
+        """Validate provider name."""
+        valid_providers = ["openai", "anthropic", "mistral", "deepseek"]
+        if v.lower() not in valid_providers:
+            raise ValueError(f"Provider must be one of: {valid_providers}")
+        return v.lower()
 
 
 class TranslationResponse(BaseModel):
     """Response model for translation results."""
     translated_text: str
     provider_used: str
+    model_used: str
     source_lang: str
     target_lang: str
     quality_score: float
@@ -78,38 +92,51 @@ class BatchTranslationResponse(BaseModel):
     results: List[TranslationResponse]
     total_translations: int
     successful_translations: int
+    provider_used: str
+    model_used: str
+
+
+class ProvidersResponse(BaseModel):
+    """Response model for available providers and models."""
+    providers: List[str]
+    models: Dict[str, Dict[str, Any]]
 
 
 class LanguagesResponse(BaseModel):
-    """Response model for supported languages."""
-    languages: Dict[str, Dict[str, Any]]
-    providers: List[str]
+    """Response model for supported languages by provider."""
+    provider: str
+    languages: List[str]
+    total_count: int
 
 
-class ProviderValidationResponse(BaseModel):
+class ValidationResponse(BaseModel):
     """Response model for API key validation."""
-    validation_results: Dict[str, bool]
-    available_providers: List[str]
+    provider: str
+    is_valid: bool
+    message: str
 
 
 
 @router.post("/", response_model=TranslationResponse)
-async def translate_text(request: TranslationRequest):
+async def translate_text(request: FlexibleTranslationRequest):
     """
-    Translate a single text using cascading fallback providers.
+    Translate a single text using specified provider and model.
     """
     try:
-        result = await provider_router.translate(
+        result = await translation_service.translate(
             text=request.text,
             source_lang=request.source_lang,
             target_lang=request.target_lang,
-            api_keys=request.api_keys,
+            provider=request.provider,
+            api_key=request.api_key,
+            model=request.model,
             context=request.context
         )
         
         return TranslationResponse(
             translated_text=result.translated_text,
             provider_used=result.provider_used,
+            model_used=result.metadata.get("model_used", "default"),
             source_lang=result.source_lang,
             target_lang=result.target_lang,
             quality_score=result.quality_score,
@@ -124,16 +151,18 @@ async def translate_text(request: TranslationRequest):
 
 
 @router.post("/batch", response_model=BatchTranslationResponse)
-async def translate_batch(request: BatchTranslationRequest):
+async def translate_batch(request: FlexibleBatchTranslationRequest):
     """
-    Translate multiple texts using cascading fallback providers.
+    Translate multiple texts using specified provider and model.
     """
     try:
-        results = await provider_router.batch_translate(
+        results = await translation_service.batch_translate(
             texts=request.texts,
             source_lang=request.source_lang,
             target_lang=request.target_lang,
-            api_keys=request.api_keys,
+            provider=request.provider,
+            api_key=request.api_key,
+            model=request.model,
             context=request.context
         )
         
@@ -141,6 +170,7 @@ async def translate_batch(request: BatchTranslationRequest):
             TranslationResponse(
                 translated_text=result.translated_text,
                 provider_used=result.provider_used,
+                model_used=result.metadata.get("model_used", "default"),
                 source_lang=result.source_lang,
                 target_lang=result.target_lang,
                 quality_score=result.quality_score,
@@ -153,7 +183,9 @@ async def translate_batch(request: BatchTranslationRequest):
         return BatchTranslationResponse(
             results=response_results,
             total_translations=len(request.texts),
-            successful_translations=len(results)
+            successful_translations=len(results),
+            provider_used=request.provider,
+            model_used=request.model or "default"
         )
         
     except TranslationError as e:
@@ -163,68 +195,95 @@ async def translate_batch(request: BatchTranslationRequest):
 
 
 
-@router.get("/languages", response_model=LanguagesResponse)
-async def get_supported_languages():
+@router.get("/providers", response_model=ProvidersResponse)
+async def get_providers_and_models():
     """
-    Get supported language pairs and their directions.
+    Get available providers and their supported models.
     """
     try:
-        supported_langs = provider_router.get_supported_languages()
+        providers = translation_service.get_available_providers()
+        models = translation_service.get_provider_models()
         
-        # Create language information with directions
-        languages = {}
-        for provider, langs in supported_langs.items():
-            for lang in langs:
-                if lang not in languages:
-                    direction = provider_router.get_language_direction(lang)
-                    languages[lang] = {
-                        "code": lang,
-                        "direction": direction.value,
-                        "supported_by": []
-                    }
-                languages[lang]["supported_by"].append(provider)
+        return ProvidersResponse(
+            providers=providers,
+            models=models
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/languages/{provider}", response_model=LanguagesResponse)
+async def get_supported_languages(provider: str):
+    """
+    Get supported languages for a specific provider.
+    """
+    try:
+        available_providers = translation_service.get_available_providers()
+        if provider not in available_providers:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Provider '{provider}' not found. Available: {available_providers}"
+            )
+        
+        languages = translation_service.get_supported_languages(provider)
         
         return LanguagesResponse(
+            provider=provider,
             languages=languages,
-            providers=list(supported_langs.keys())
+            total_count=len(languages)
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.post("/validate", response_model=ProviderValidationResponse)
-async def validate_api_keys(api_keys: Dict[str, str]):
+class ApiKeyValidationRequest(BaseModel):
+    """Request model for API key validation."""
+    api_key: str = Field(..., description="API key to validate")
+
+
+@router.post("/validate/{provider}", response_model=ValidationResponse)
+async def validate_api_key(provider: str, request: ApiKeyValidationRequest):
     """
-    Validate API keys for translation providers.
+    Validate an API key for a specific provider.
     """
     try:
-        validation_results = await provider_router.validate_api_keys(api_keys)
-        available_providers = provider_router.get_available_providers(api_keys)
+        available_providers = translation_service.get_available_providers()
+        if provider not in available_providers:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Provider '{provider}' not found. Available: {available_providers}"
+            )
         
-        return ProviderValidationResponse(
-            validation_results=validation_results,
-            available_providers=available_providers
+        is_valid = await translation_service.validate_api_key(provider, request.api_key)
+        
+        return ValidationResponse(
+            provider=provider,
+            is_valid=is_valid,
+            message="API key is valid" if is_valid else "API key is invalid"
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.get("/providers")
-async def get_providers():
+@router.get("/language-direction/{lang_code}")
+async def get_language_direction(lang_code: str):
     """
-    Get list of available translation providers and their order.
+    Get text direction for a language code.
     """
     try:
+        direction = translation_service.get_language_direction(lang_code)
+        
         return {
-            "providers": [
-                {"name": "openai", "order": 1, "description": "OpenAI GPT (Primary)"},
-                {"name": "anthropic", "order": 2, "description": "Anthropic Claude (Secondary)"},
-                {"name": "mistral", "order": 3, "description": "Mistral AI (Tertiary)"},
-                {"name": "deepseek", "order": 4, "description": "DeepSeek (Fallback)"}
-            ],
-            "fallback_order": "Providers are tried in order until one succeeds"
+            "language_code": lang_code.lower(),
+            "direction": direction.value,
+            "is_rtl": direction == LanguageDirection.RTL
         }
         
     except Exception as e:
