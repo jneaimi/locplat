@@ -42,7 +42,7 @@ class MistralProvider(TranslationProvider):
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "You are a professional translator. Provide only the translated text without explanations."
+                                "content": "You are a professional translator. Translate the given text accurately and provide ONLY the translated text. Do not add any notes, explanations, disclaimers, or additional commentary. Return only the direct translation."
                             },
                             {"role": "user", "content": prompt}
                         ],
@@ -61,6 +61,9 @@ class MistralProvider(TranslationProvider):
                 
                 data = response.json()
                 translation = data["choices"][0]["message"]["content"].strip()
+                
+                # Clean up Mistral's tendency to add notes and disclaimers
+                translation = self._clean_mistral_response(translation)
                 
                 if not translation:
                     raise ProviderError(self.name, "Empty translation response")
@@ -125,6 +128,44 @@ class MistralProvider(TranslationProvider):
         """Get supported language codes."""
         return self.supported_languages.copy()
     
+    def _clean_mistral_response(self, translation: str) -> str:
+        """
+        Clean up Mistral's response by removing notes, disclaimers, and explanations.
+        
+        Args:
+            translation: Raw translation response from Mistral
+            
+        Returns:
+            Cleaned translation text only
+        """
+        import re
+        
+        # Remove common disclaimer patterns
+        patterns_to_remove = [
+            r'\n\n\(Note:.*?\)',  # Remove (Note: ...) at the end
+            r'\n\nNote:.*',       # Remove Note: ... at the end
+            r'\n\nDisclaimer:.*', # Remove Disclaimer: ... at the end
+            r'\n\n\*.*?\*',       # Remove *italicized notes*
+            r'\n\nThis translation.*', # Remove "This translation..." notes
+            r'\n\nPlease note.*',      # Remove "Please note..." disclaimers
+            r'\n\nFor.*context.*',     # Remove context-related notes
+        ]
+        
+        cleaned = translation
+        for pattern in patterns_to_remove:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Remove any remaining double newlines and extra whitespace
+        cleaned = re.sub(r'\n\s*\n', '\n', cleaned)
+        cleaned = cleaned.strip()
+        
+        return cleaned
+    
     def _create_mistral_prompt(self, text: str, source_lang: str, target_lang: str, context: Optional[str] = None) -> str:
         """Create optimized prompt for Mistral AI."""
-        return self.optimize_prompt_for_provider(text, source_lang, target_lang, context)
+        base_prompt = self.optimize_prompt_for_provider(text, source_lang, target_lang, context)
+        
+        # Add Mistral-specific instructions to avoid notes and disclaimers
+        enhanced_prompt = f"{base_prompt}\n\nIMPORTANT: Provide ONLY the direct translation. Do not add any notes, explanations, or disclaimers."
+        
+        return enhanced_prompt

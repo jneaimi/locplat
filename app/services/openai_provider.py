@@ -36,7 +36,7 @@ class OpenAIProvider(TranslationProvider):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "You are a professional translator. Provide only the translated text without explanations."
+                        "content": "You are a professional translator. Translate the given text accurately and provide ONLY the translated text. Do not add any notes, explanations, disclaimers, or additional commentary. Return only the direct translation."
                     },
                     {"role": "user", "content": prompt}
                 ],

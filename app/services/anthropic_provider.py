@@ -35,6 +35,7 @@ class AnthropicProvider(TranslationProvider):
                 model="claude-3-haiku-20240307",
                 max_tokens=2000,
                 temperature=0.3,
+                system="You are a professional translator. Translate the given text accurately and provide ONLY the translated text. Do not add any notes, explanations, disclaimers, or additional commentary. Return only the direct translation.",
                 messages=[{"role": "user", "content": prompt}]
             )
             

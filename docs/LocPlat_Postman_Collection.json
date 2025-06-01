@@ -1,0 +1,622 @@
+{
+  "info": {
+    "name": "LocPlat - AI Translation Service",
+    "description": "Complete Postman collection for testing the LocPlat flexible AI translation service with multiple providers (OpenAI, Anthropic, Mistral, DeepSeek)",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "openai_api_key",
+      "value": "sk-your-openai-key-here",
+      "type": "string"
+    },
+    {
+      "key": "anthropic_api_key",
+      "value": "sk-ant-your-anthropic-key-here",
+      "type": "string"
+    },
+    {
+      "key": "mistral_api_key",
+      "value": "your-mistral-key-here",
+      "type": "string"
+    },
+    {
+      "key": "deepseek_api_key",
+      "value": "your-deepseek-key-here",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Service Health Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check if all services (API, database, Redis) are operational"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Provider Information",
+      "item": [
+        {
+          "name": "Get All Providers and Models",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/providers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "providers"]
+            },
+            "description": "Get information about all available AI providers and their supported models with cost/quality ratings"
+          },
+          "response": []
+        },
+        {
+          "name": "Get OpenAI Languages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/languages/openai",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "languages", "openai"]
+            },
+            "description": "Get supported languages for OpenAI provider"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Anthropic Languages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/languages/anthropic",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "languages", "anthropic"]
+            },
+            "description": "Get supported languages for Anthropic provider"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Mistral Languages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/languages/mistral",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "languages", "mistral"]
+            },
+            "description": "Get supported languages for Mistral provider"
+          },
+          "response": []
+        },
+        {
+          "name": "Get DeepSeek Languages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/languages/deepseek",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "languages", "deepseek"]
+            },
+            "description": "Get supported languages for DeepSeek provider"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "API Key Validation",
+      "item": [
+        {
+          "name": "Validate OpenAI Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"api_key\": \"{{openai_api_key}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/validate/openai",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "validate", "openai"]
+            },
+            "description": "Test if your OpenAI API key is valid"
+          },
+          "response": []
+        },
+        {
+          "name": "Validate Anthropic Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"api_key\": \"{{anthropic_api_key}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/validate/anthropic",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "validate", "anthropic"]
+            },
+            "description": "Test if your Anthropic API key is valid"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Language Direction",
+      "item": [
+        {
+          "name": "Check Arabic Direction (RTL)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/language-direction/ar",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "language-direction", "ar"]
+            },
+            "description": "Check if Arabic is RTL (Right-to-Left) - should return true"
+          },
+          "response": []
+        },
+        {
+          "name": "Check English Direction (LTR)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/language-direction/en",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "language-direction", "en"]
+            },
+            "description": "Check if English is LTR (Left-to-Right) - should return false for is_rtl"
+          },
+          "response": []
+        },
+        {
+          "name": "Check Bosnian Direction (LTR)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/language-direction/bs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "language-direction", "bs"]
+            },
+            "description": "Check if Bosnian is LTR (Left-to-Right)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Single Translation Tests",
+      "item": [
+        {
+          "name": "OpenAI: English to Arabic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello, welcome to LocPlat! This is a powerful AI translation service.\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o-mini\",\n  \"context\": \"greeting and product introduction\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Translate English to Arabic using OpenAI GPT-4o-mini"
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAI: English to Bosnian",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello, welcome to LocPlat! This is a powerful AI translation service.\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"bs\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o-mini\",\n  \"context\": \"greeting and product introduction\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Translate English to Bosnian using OpenAI GPT-4o-mini"
+          },
+          "response": []
+        },
+        {
+          "name": "Anthropic: English to Arabic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Good morning! How can I help you today?\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"anthropic\",\n  \"api_key\": \"{{anthropic_api_key}}\",\n  \"model\": \"claude-3-haiku-20240307\",\n  \"context\": \"customer service greeting\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Translate English to Arabic using Anthropic Claude Haiku"
+          },
+          "response": []
+        },
+        {
+          "name": "Mistral: English to Arabic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Thank you for your order. Your package will arrive tomorrow.\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"mistral\",\n  \"api_key\": \"{{mistral_api_key}}\",\n  \"model\": \"mistral-small\",\n  \"context\": \"e-commerce notification\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Translate English to Arabic using Mistral Small"
+          },
+          "response": []
+        },
+        {
+          "name": "DeepSeek: English to Bosnian",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"The weather is beautiful today. Perfect for a walk in the park.\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"bs\",\n  \"provider\": \"deepseek\",\n  \"api_key\": \"{{deepseek_api_key}}\",\n  \"model\": \"deepseek-chat\",\n  \"context\": \"casual conversation\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Translate English to Bosnian using DeepSeek Chat"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Batch Translation Tests",
+      "item": [
+        {
+          "name": "OpenAI: Batch English to Arabic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"texts\": [\n    \"Welcome to our restaurant!\",\n    \"What would you like to order?\",\n    \"The bill comes to $25.50\",\n    \"Thank you for dining with us!\",\n    \"Have a great evening!\"\n  ],\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o-mini\",\n  \"context\": \"restaurant service phrases\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "batch"]
+            },
+            "description": "Translate multiple restaurant phrases from English to Arabic using OpenAI"
+          },
+          "response": []
+        },
+        {
+          "name": "Anthropic: Batch English to Bosnian",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"texts\": [\n    \"Good morning\",\n    \"How are you?\",\n    \"Please\",\n    \"Thank you\",\n    \"Goodbye\"\n  ],\n  \"source_lang\": \"en\",\n  \"target_lang\": \"bs\",\n  \"provider\": \"anthropic\",\n  \"api_key\": \"{{anthropic_api_key}}\",\n  \"model\": \"claude-3-haiku-20240307\",\n  \"context\": \"basic politeness phrases\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "batch"]
+            },
+            "description": "Translate basic politeness phrases from English to Bosnian using Anthropic Claude"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Model Comparison Tests",
+      "item": [
+        {
+          "name": "OpenAI GPT-4o-mini (Low Cost)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Artificial intelligence is revolutionizing the way we communicate across languages and cultures.\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o-mini\",\n  \"context\": \"technology article\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Test cost-effective model for technical translation"
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAI GPT-4o (High Quality)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Artificial intelligence is revolutionizing the way we communicate across languages and cultures.\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o\",\n  \"context\": \"technology article\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Test premium model for same text - compare quality and cost"
+          },
+          "response": []
+        },
+        {
+          "name": "Anthropic Claude Haiku (Fast)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Artificial intelligence is revolutionizing the way we communicate across languages and cultures.\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"anthropic\",\n  \"api_key\": \"{{anthropic_api_key}}\",\n  \"model\": \"claude-3-haiku-20240307\",\n  \"context\": \"technology article\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Test Anthropic's fast model for same text"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Error Handling Tests",
+      "item": [
+        {
+          "name": "Invalid Provider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Test message\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"invalid_provider\",\n  \"api_key\": \"fake-key\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Test error handling with invalid provider name"
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid Language Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Test message\",\n  \"source_lang\": \"invalid\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Test validation with invalid language code"
+          },
+          "response": []
+        },
+        {
+          "name": "Empty Text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Test validation with empty text"
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Test message\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"invalid-key-12345\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Test error handling with invalid API key"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Directus Integration Examples",
+      "item": [
+        {
+          "name": "Blog Post Translation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"How to Build Scalable Web Applications with Modern JavaScript Frameworks\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o-mini\",\n  \"context\": \"blog post title about web development\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", ""]
+            },
+            "description": "Example: Translate blog post title for Directus CMS"
+          },
+          "response": []
+        },
+        {
+          "name": "Product Description Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"texts\": [\n    \"Premium Quality T-Shirt\",\n    \"Made from 100% organic cotton\",\n    \"Available in multiple colors\",\n    \"Machine washable\",\n    \"Free shipping on orders over $50\"\n  ],\n  \"source_lang\": \"en\",\n  \"target_lang\": \"bs\",\n  \"provider\": \"anthropic\",\n  \"api_key\": \"{{anthropic_api_key}}\",\n  \"model\": \"claude-3-haiku-20240307\",\n  \"context\": \"e-commerce product information\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/translate/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "translate", "batch"]
+            },
+            "description": "Example: Batch translate product details for e-commerce Directus setup"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

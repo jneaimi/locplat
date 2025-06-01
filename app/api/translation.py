@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, validator
 from ..services.flexible_translation_service import FlexibleTranslationService
 from ..services import TranslationError, LanguageDirection
 
-router = APIRouter(prefix="/translate", tags=["translation"])
+router = APIRouter(prefix="/translate", tags=["Translation"])
 
 # Initialize the flexible translation service
 translation_service = FlexibleTranslationService()
