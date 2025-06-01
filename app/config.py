@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # AI Provider Configuration (Optional - Keys provided per request)
     OPENAI_API_KEY: Optional[str] = None
-    GOOGLE_TRANSLATE_API_KEY: Optional[str] = None
+    # Note: Deep Translator (fallback) doesn't require API keys
     
     class Config:
         env_file = ".env"
