@@ -1,0 +1,124 @@
+# LocPlat - Simple AI Translation Service
+## Simplified Product Requirements Document (PRD)
+
+### Executive Summary
+LocPlat is a straightforward AI-powered translation service focused on providing reliable translations for Directus CMS. The service supports English to Arabic and Bosnian translations using multiple AI providers with client-provided credentials.
+
+### Vision Statement
+To provide a simple, reliable translation service that helps content managers create multilingual content without complexity.
+
+### Target Users
+- **Content Managers**: Managing multilingual content in Directus CMS
+- **Developers**: Need simple translation API integration
+- **Small Teams**: Want cost-effective translation without enterprise overhead
+
+### Core Objectives (Simplified)
+1. **Multi-Provider Support**: OpenAI + Google Translate as backup
+2. **Three Languages**: English (source) → Arabic & Bosnian
+3. **Client Credentials**: Users provide their own AI API keys
+4. **Simple Caching**: Redis for cost control
+5. **Directus Integration**: Basic field mapping for Directus
+6. **Reliable Service**: Works consistently without complexity
+
+### Key Features (MVP)
+
+#### 1. Basic Translation Engine
+- **Languages**: English → Arabic (RTL), English → Bosnian (Latin/Cyrillic)
+- **Providers**: OpenAI (primary), Google Translate (fallback)
+- **Quality**: Good enough for content management use
+
+#### 2. Simple Provider Management
+- **Primary**: OpenAI for quality translations
+- **Fallback**: Google Translate when OpenAI fails
+- **Client Keys**: Users provide API keys per request
+
+#### 3. Basic Security
+- **No Key Storage**: API keys never stored on server
+- **Request-Only**: Credentials provided with each translation request
+- **Simple Logging**: Basic usage tracking
+
+#### 4. Simple Field Mapping
+- **API Configuration**: Define which fields to translate via API
+- **Basic Paths**: Simple JSON path support (e.g., "title", "content")
+- **Type Support**: Plain text and basic HTML
+
+#### 5. Redis Caching
+- **Simple Cache**: Hash-based content caching
+- **Cost Control**: Avoid duplicate AI API calls
+- **TTL**: Simple time-based expiration
+#### 6. Directus Integration
+- **Basic Support**: Translate Directus collection fields
+- **Simple Batch**: Process multiple items at once
+- **JSON Response**: Return translated data in Directus format
+
+### Technical Architecture (Simplified)
+
+#### Single Service
+- **FastAPI**: Single Python service handling everything
+- **PostgreSQL**: Store translation history and configs
+- **Redis**: Simple caching layer
+- **Docker**: Easy deployment
+
+#### Core Components
+1. **Translation API**: Main endpoint handling requests
+2. **Provider Router**: Choose OpenAI or Google Translate
+3. **Field Mapper**: Map which fields to translate
+4. **Cache Manager**: Simple Redis operations
+5. **Directus Helper**: Format data for Directus
+
+### API Specifications (Minimal)
+
+#### Core Endpoints
+1. **POST /translate**: Main translation endpoint
+2. **GET /languages**: Supported language pairs
+3. **POST /fields/config**: Configure translatable fields
+4. **GET /health**: Service health check
+
+#### Request Format
+```json
+{
+  "content": {"title": "Hello", "description": "World"},
+  "target_language": "ar",
+  "openai_key": "sk-...",
+  "google_key": "AIza..."
+}
+```
+
+### Success Metrics (Simple)
+1. **Works Reliably**: 99% successful translations
+2. **Fast Enough**: <3 seconds response time
+3. **Cost Effective**: 50%+ cache hit rate
+4. **Easy to Use**: Simple API integration
+
+### Implementation Plan (Simplified)
+
+#### Phase 1: Basic Service (2-3 weeks)
+- FastAPI with PostgreSQL and Redis
+- OpenAI integration with basic caching
+- English → Arabic translation
+- Docker deployment setup
+
+#### Phase 2: Bosnian + Fallback (1-2 weeks)
+- Add Bosnian language support
+- Google Translate fallback
+- Basic error handling
+
+#### Phase 3: Directus Integration (1-2 weeks)
+- Directus-specific endpoints
+- Field mapping configuration
+- Batch translation support
+
+#### Phase 4: Polish & Deploy (1 week)
+- Coolify deployment
+- Basic monitoring
+- Documentation
+
+### Total Timeline: 5-8 weeks for MVP
+### Risk Mitigation (Simple)
+1. **API Failures**: Google Translate fallback
+2. **Quality Issues**: Start with known good providers
+3. **Cost Control**: Aggressive caching
+4. **Complexity**: Keep it simple, add features later
+
+### Conclusion
+This simplified LocPlat focuses on delivering a working translation service quickly. The goal is to have content managers translating Directus content reliably within 2 months, then iterate based on real usage.
