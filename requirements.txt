@@ -1,34 +1,34 @@
-# FastAPI and dependencies
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+# FastAPI and dependencies - Latest Stable Versions
+fastapi[standard]>=0.114.0,<0.115.0
+uvicorn[standard]>=0.31.0,<0.32.0
 
-# Database
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
-alembic==1.12.1
+# Database - Latest Stable Versions  
+sqlalchemy>=2.0.35,<3.0.0
+psycopg2-binary>=2.9.10,<3.0.0
+alembic>=1.13.3,<2.0.0
 
-# Redis
-redis==5.0.1
+# Redis - Latest Stable Version
+redis>=5.2.0,<6.0.0
 
-# Data validation
-pydantic==2.5.0
-pydantic-settings==2.1.0
+# Data validation - Latest Stable Versions
+pydantic>=2.10.0,<3.0.0
+pydantic-settings>=2.6.0,<3.0.0
 
-# HTTP client
-httpx==0.25.2
+# HTTP client - Latest Stable Version
+httpx>=0.28.0,<0.29.0
 
-# AI/Translation
-openai==1.3.7
+# AI/Translation - Latest Stable Versions
+openai>=1.58.0,<2.0.0
 # Using deep-translator as a free, reliable alternative to Google Translate
-deep-translator==1.11.4
+deep-translator>=1.11.4,<2.0.0
 
-# Utilities
-python-multipart==0.0.6
-python-dotenv==1.0.0
+# Utilities - Latest Stable Versions
+python-multipart>=0.0.12,<0.1.0
+python-dotenv>=1.0.1,<2.0.0
 
-# Development
-pytest==7.4.3
-pytest-asyncio==0.21.1
-black==23.11.0
-flake8==6.1.0
-mypy==1.7.1
+# Development - Latest Stable Versions
+pytest>=8.3.4,<9.0.0
+pytest-asyncio>=0.24.0,<1.0.0
+black>=24.10.0,<25.0.0
+flake8>=7.1.1,<8.0.0
+mypy>=1.13.0,<2.0.0
