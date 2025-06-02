@@ -1,337 +1,111 @@
 # Task ID: 5
 # Title: Implement Translation API Endpoints
-# Status: pending
+# Status: done
 # Dependencies: 2, 3, 4
 # Priority: high
-# Description: Create the main translation API endpoints including the core translation functionality, provider management, language pair listing, field configuration, and status monitoring.
+# Description: Complete the remaining translation API endpoints and fix existing issues, building upon the already implemented functionality in translation.py.
 # Details:
-1. Implement POST /translate endpoint
-2. Create GET /languages endpoint
-3. Add POST /fields/config endpoint
-4. Implement GET /providers and POST /providers endpoints for provider management
-5. Add GET /status endpoint for service monitoring
-6. Integrate all components (AI providers, cache, field mapping)
-7. Implement request/response models with structured response support
+Based on the existing implementation in translation.py, focus on implementing the remaining endpoint and maintaining the already completed functionality:
 
-API implementation:
+1. Create GET /translate/history endpoint for translation audit logs
+
+### Already implemented functionality (for reference):
+- Single text translation (/translate/)
+- Batch translation (/translate/batch)
+- Structured content translation (/translate/structured)
+- Provider listing (/translate/providers)
+- API key validation (/translate/validate/{provider})
+- Language direction detection (/translate/language-direction/{lang_code})
+- Translation preview (/translate/preview)
+- Translation request validation (/translate/validate)
+- Enhanced language pairs endpoint (/api/v1/translate/language-pairs/{provider})
+- Service metrics endpoint (/api/v1/translate/metrics)
+- Field configuration endpoints (working correctly)
+- Performance metrics collection system
+
+### Implementation plan for remaining endpoint:
+
 ```python
-from fastapi import FastAPI, Depends, HTTPException, Body, Header
-from pydantic import BaseModel, Field
-from typing import Dict, List, Any, Optional, Union
-
-app = FastAPI(title="LocPlat Translation Service")
-
-class TranslationRequest(BaseModel):
-    content: Dict[str, Any]
-    target_language: str
-    source_language: str = "en"
-    collection_name: Optional[str] = None
-    client_id: Optional[str] = None
-    provider: Optional[str] = None  # Allow specifying preferred provider
-    structured_response: bool = False  # Support structured responses like directus-translator
-
-class TranslationResponse(BaseModel):
-    translated_content: Dict[str, Any]
-    source_language: str
-    target_language: str
-    provider_used: str
-    cache_hit: bool
-
-class FieldConfigRequest(BaseModel):
-    client_id: str
-    collection_name: str
-    field_paths: List[str]
-
-class LanguagePair(BaseModel):
-    source: str
-    target: str
-    name: str
-
-class ProviderConfig(BaseModel):
-    name: str  # e.g., "openai", "anthropic", "mistral", "deepseek"
-    api_key: str
-    priority: int = 1  # Lower number = higher priority
-    enabled: bool = True
-    model: Optional[str] = None  # Specific model to use
-
-class ProviderInfo(BaseModel):
-    name: str
-    enabled: bool
-    priority: int
-    model: Optional[str] = None
-
-class ServiceStatus(BaseModel):
-    status: str
-    providers: Dict[str, bool]  # Provider name -> availability status
-    cache_size: int
-    uptime: float
-
-# Middleware to handle API key authentication
-@app.middleware("http")
-async def authenticate_client(request, call_next):
-    client_api_key = request.headers.get("X-API-Key")
-    if not client_api_key:
-        return JSONResponse(status_code=401, content={"detail": "API key required"})
-    
-    # Validate API key against database
-    if not await is_valid_api_key(client_api_key):
-        return JSONResponse(status_code=403, content={"detail": "Invalid API key"})
-    
-    # Add client info to request state
-    request.state.client_id = await get_client_id_from_key(client_api_key)
-    
-    response = await call_next(request)
-    return response
-
-@app.post("/translate", response_model=TranslationResponse)
-async def translate_content(
-    request: TranslationRequest,
-    translation_service = Depends(get_translation_service),
-    x_api_key: str = Header(..., alias="X-API-Key")
+# Translation history/audit endpoint
+@app.get("/translate/history", response_model=List[TranslationRecord])
+async def get_translation_history(
+    client_id: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    limit: int = 100,
+    offset: int = 0,
+    history_service = Depends(get_history_service)
 ):
-    try:
-        result = await translation_service.translate_content(
-            content=request.content,
-            source_lang=request.source_language,
-            target_lang=request.target_language,
-            provider=request.provider,
-            structured_response=request.structured_response,
-            collection_name=request.collection_name,
-            client_id=request.client_id or request.state.client_id
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/languages", response_model=List[LanguagePair])
-async def get_languages():
-    return [
-        {"source": "en", "target": "ar", "name": "English to Arabic"},
-        {"source": "en", "target": "bs", "name": "English to Bosnian"},
-        # Add more language pairs
-    ]
-
-@app.post("/fields/config")
-async def configure_fields(
-    config: FieldConfigRequest,
-    field_mapper = Depends(get_field_mapper)
-):
-    await field_mapper.save_field_config(
-        client_id=config.client_id,
-        collection_name=config.collection_name,
-        field_paths=config.field_paths
+    return await history_service.get_history(
+        client_id=client_id,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset
     )
-    return {"status": "success"}
-
-@app.get("/providers", response_model=List[ProviderInfo])
-async def get_providers(
-    provider_manager = Depends(get_provider_manager)
-):
-    return await provider_manager.list_providers()
-
-@app.post("/providers")
-async def configure_provider(
-    config: ProviderConfig,
-    provider_manager = Depends(get_provider_manager)
-):
-    await provider_manager.configure_provider(
-        name=config.name,
-        api_key=config.api_key,
-        priority=config.priority,
-        enabled=config.enabled,
-        model=config.model
-    )
-    return {"status": "success"}
-
-@app.get("/status", response_model=ServiceStatus)
-async def get_service_status(
-    service_monitor = Depends(get_service_monitor)
-):
-    return await service_monitor.get_status()
 ```
 
-Translation service implementation:
-```python
-class TranslationService:
-    def __init__(self, provider_manager, cache, field_mapper):
-        self.provider_manager = provider_manager
-        self.cache = cache
-        self.field_mapper = field_mapper
-    
-    async def translate_content(
-        self, content, source_lang, target_lang, provider=None,
-        structured_response=False, collection_name=None, client_id=None
-    ):
-        # Get field paths if collection_name and client_id provided
-        field_paths = []
-        if collection_name and client_id:
-            field_paths = await self.field_mapper.get_field_config(client_id, collection_name)
-        
-        # If no specific fields configured, translate all string fields
-        if not field_paths:
-            field_paths = self._find_string_fields(content)
-        
-        # Extract fields to translate
-        fields_to_translate = self.field_mapper.extract_fields(content, field_paths)
-        
-        # Create result copy
-        result = content.copy()
-        cache_hit = False
-        provider_used = None
-        
-        # Process each field
-        for path, value in fields_to_translate.items():
-            if not isinstance(value, str):
-                continue
-                
-            # Check cache
-            cached = await self.cache.get_cached_translation(value, source_lang, target_lang)
-            if cached:
-                translated = cached
-                cache_hit = True
-            else:
-                # Get appropriate provider based on preference or availability
-                translation_provider = await self.provider_manager.get_provider(provider)
-                
-                if structured_response:
-                    # Use structured response format (like directus-translator)
-                    translated = await translation_provider.translate_structured(
-                        value, source_lang, target_lang
-                    )
-                else:
-                    # Standard translation
-                    translated = await translation_provider.translate(
-                        value, source_lang, target_lang
-                    )
-                
-                # Cache result
-                await self.cache.cache_translation(value, source_lang, target_lang, translated)
-                
-                # Record which provider was used
-                provider_used = translation_provider.name
-            
-            # Update result
-            self._set_nested_value(result, path, translated)
-        
-        return {
-            "translated_content": result,
-            "source_language": source_lang,
-            "target_language": target_lang,
-            "provider_used": provider_used or "cache",
-            "cache_hit": cache_hit
-        }
-    
-    def _find_string_fields(self, content, prefix=""):
-        # Recursively find all string fields in the content
-        fields = []
-        if isinstance(content, dict):
-            for key, value in content.items():
-                path = f"{prefix}.{key}" if prefix else key
-                if isinstance(value, str):
-                    fields.append(path)
-                elif isinstance(value, dict) or isinstance(value, list):
-                    fields.extend(self._find_string_fields(value, path))
-        elif isinstance(content, list):
-            for i, item in enumerate(content):
-                path = f"{prefix}[{i}]"
-                fields.extend(self._find_string_fields(item, path))
-        return fields
-    
-    def _set_nested_value(self, data, path, value):
-        # Set value in nested dictionary using dot notation
-        parts = path.split('.')
-        current = data
-        for i, part in enumerate(parts):
-            if i == len(parts) - 1:
-                current[part] = value
-            else:
-                if part not in current:
-                    current[part] = {}
-                current = current[part]
+### Models for history endpoint:
 
-class ProviderManager:
-    def __init__(self, db_client):
-        self.db_client = db_client
-        self.providers = {}
-        self.provider_classes = {
-            "openai": OpenAIProvider,
-            "anthropic": AnthropicProvider,
-            "mistral": MistralProvider,
-            "deepseek": DeepSeekProvider
-        }
-    
-    async def initialize(self):
-        # Load provider configurations from database
-        configs = await self.db_client.get_provider_configs()
-        for config in configs:
-            if config["name"] in self.provider_classes and config["enabled"]:
-                provider_class = self.provider_classes[config["name"]]
-                self.providers[config["name"]] = provider_class(
-                    api_key=config["api_key"],
-                    model=config.get("model")
-                )
-    
-    async def get_provider(self, preferred=None):
-        # Return preferred provider if specified and available
-        if preferred and preferred in self.providers:
-            return self.providers[preferred]
-        
-        # Otherwise return highest priority available provider
-        configs = await self.db_client.get_provider_configs()
-        configs.sort(key=lambda x: x["priority"])
-        
-        for config in configs:
-            if config["name"] in self.providers and config["enabled"]:
-                return self.providers[config["name"]]
-        
-        raise Exception("No translation providers available")
-    
-    async def list_providers(self):
-        configs = await self.db_client.get_provider_configs()
-        return [{
-            "name": config["name"],
-            "enabled": config["enabled"],
-            "priority": config["priority"],
-            "model": config.get("model")
-        } for config in configs]
-    
-    async def configure_provider(self, name, api_key, priority=1, enabled=True, model=None):
-        if name not in self.provider_classes:
-            raise ValueError(f"Unknown provider: {name}")
-        
-        # Save configuration to database
-        await self.db_client.save_provider_config({
-            "name": name,
-            "api_key": api_key,
-            "priority": priority,
-            "enabled": enabled,
-            "model": model
-        })
-        
-        # Update in-memory provider if enabled
-        if enabled:
-            provider_class = self.provider_classes[name]
-            self.providers[name] = provider_class(
-                api_key=api_key,
-                model=model
-            )
-        elif name in self.providers:
-            del self.providers[name]
+```python
+class TranslationRecord(BaseModel):
+    id: str
+    timestamp: datetime
+    client_id: str
+    source_language: str
+    target_language: str
+    provider: str
+    content_type: str  # "text", "batch", "structured"
+    character_count: int
+    processing_time: float
+    status: str
+    cache_hit: bool
 ```
 
 # Test Strategy:
-1. Test POST /translate with various content structures
-2. Verify correct handling of client API keys
-3. Test structured response format compatibility with directus-translator
-4. Test with all supported AI providers (OpenAI, Anthropic, Mistral, DeepSeek)
-5. Test provider fallback behavior when preferred provider is unavailable
-6. Test caching behavior and hit rate
-7. Validate field mapping functionality
-8. Verify language pair endpoint returns correct data
-9. Test field configuration endpoint
-10. Test provider management endpoints (GET/POST /providers)
-11. Verify status monitoring endpoint
-12. Perform integration tests with all components
-13. Benchmark API response times with different providers
-14. Test with actual Directus content structures
-15. Verify proper error handling when providers fail
+1. Test GET /translate/history endpoint with various filters
+   - Test filtering by client_id
+   - Test date range filtering
+   - Test pagination with limit and offset
+   - Verify all fields are correctly populated
+2. Verify proper error handling in the history endpoint
+3. Test history endpoint performance with large datasets
+4. Verify history/audit logs contain all required information
+5. Test integration with existing translation endpoints
+6. Verify metrics continue to be properly recorded for each provider
+7. Verify the enhanced language pairs endpoint continues to work correctly
+8. Verify service metrics endpoint continues to provide accurate data
+9. Confirm field configuration endpoints remain stable
+10. Verify performance metrics collection continues to function properly
+
+# Subtasks:
+## 5.1. Enhance language pairs endpoint by provider [completed]
+### Dependencies: None
+### Description: Implement or enhance the GET /translate/languages/{provider} endpoint to return supported language pairs specific to each provider.
+### Details:
+
+
+## 5.2. Implement service metrics endpoint [completed]
+### Dependencies: None
+### Description: Create GET /translate/metrics endpoint that returns comprehensive service statistics including provider availability, cache performance, and response times.
+### Details:
+
+
+## 5.3. Create translation history endpoint [done]
+### Dependencies: None
+### Description: Implement GET /translate/history endpoint for retrieving translation audit logs with filtering capabilities.
+### Details:
+
+
+## 5.4. Fix field configuration endpoints [completed]
+### Dependencies: None
+### Description: Debug and fix the 500 errors occurring in the field configuration endpoints, adding proper error handling and logging.
+### Details:
+
+
+## 5.5. Implement performance metrics collection [completed]
+### Dependencies: None
+### Description: Create a metrics collection system that tracks request counts, response times, error rates, and provider-specific statistics.
+### Details:
+
+

@@ -1,6 +1,7 @@
 """
 Translation API endpoints for LocPlat service - Flexible provider/model selection.
 """
+import time
 from typing import Dict, List, Optional, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, validator
@@ -165,11 +166,177 @@ class LanguagesResponse(BaseModel):
     total_count: int
 
 
+class LanguagePair(BaseModel):
+    """Model for language pair information."""
+    source: str
+    target: str
+    name: str
+    supported_features: List[str] = Field(default_factory=list)
+    quality_rating: str = "high"  # high, medium, low
+    processing_time: str = "fast"  # fast, medium, slow
+
+
+class EnhancedLanguagesResponse(BaseModel):
+    """Enhanced response model for language pairs and capabilities."""
+    provider: str
+    models: Dict[str, Any]  # Changed to Any to handle both dict and string values
+    language_pairs: List[LanguagePair]
+    supported_features: List[str]
+    total_pairs: int
+    provider_info: Dict[str, Any]
+
+
+class ServiceMetrics(BaseModel):
+    """Response model for service metrics."""
+    status: str
+    uptime_seconds: float
+    providers: Dict[str, Dict[str, Any]]
+    cache_stats: Dict[str, Any]
+    total_requests: int
+    successful_requests: int
+    failed_requests: int
+    average_response_time_ms: float
+    success_rate: float
+    timestamp: float
+
+
 class ValidationResponse(BaseModel):
     """Response model for API key validation."""
     provider: str
     is_valid: bool
     message: str
+
+
+class TranslationRecord(BaseModel):
+    """Model for translation history records."""
+    id: str
+    timestamp: float
+    client_id: str
+    source_language: str
+    target_language: str
+    provider: str
+    model_used: str
+    content_type: str  # "text", "batch", "structured"
+    character_count: int
+    processing_time_ms: float
+    status: str  # "success", "failed", "cached"
+    cache_hit: bool
+    quality_score: Optional[float] = None
+    error_message: Optional[str] = None
+
+
+class TranslationHistoryRequest(BaseModel):
+    """Request model for translation history filtering."""
+    client_id: Optional[str] = Field(None, description="Filter by client ID")
+    provider: Optional[str] = Field(None, description="Filter by provider")
+    start_date: Optional[str] = Field(None, description="Start date (ISO format)")
+    end_date: Optional[str] = Field(None, description="End date (ISO format)")
+    content_type: Optional[str] = Field(None, description="Filter by content type")
+    status: Optional[str] = Field(None, description="Filter by status")
+    limit: int = Field(100, description="Maximum records to return", ge=1, le=1000)
+    offset: int = Field(0, description="Number of records to skip", ge=0)
+
+
+class TranslationHistoryResponse(BaseModel):
+    """Response model for translation history."""
+    records: List[TranslationRecord]
+    total_count: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+# Global metrics storage (in production, this would be in Redis or database)
+_service_metrics = {
+    "start_time": time.time(),
+    "total_requests": 0,
+    "successful_requests": 0,
+    "failed_requests": 0,
+    "response_times": [],
+    "provider_stats": {}
+}
+
+
+def record_request_metric(provider: str, success: bool, response_time_ms: float):
+    """Record metrics for a request."""
+    _service_metrics["total_requests"] += 1
+    _service_metrics["response_times"].append(response_time_ms)
+    
+    # Keep only last 1000 response times to prevent memory issues
+    if len(_service_metrics["response_times"]) > 1000:
+        _service_metrics["response_times"] = _service_metrics["response_times"][-1000:]
+    
+    if success:
+        _service_metrics["successful_requests"] += 1
+    else:
+        _service_metrics["failed_requests"] += 1
+    
+    # Provider-specific metrics
+    if provider not in _service_metrics["provider_stats"]:
+        _service_metrics["provider_stats"][provider] = {
+            "requests": 0,
+            "successes": 0,
+            "failures": 0,
+            "response_times": []
+        }
+    
+    provider_stats = _service_metrics["provider_stats"][provider]
+    provider_stats["requests"] += 1
+    provider_stats["response_times"].append(response_time_ms)
+    
+    # Keep only last 100 response times per provider
+    if len(provider_stats["response_times"]) > 100:
+        provider_stats["response_times"] = provider_stats["response_times"][-100:]
+    
+    if success:
+        provider_stats["successes"] += 1
+    else:
+        provider_stats["failures"] += 1
+
+
+# Global translation history storage (in production, this would be in database)
+_translation_history = []
+
+
+def record_translation(
+    client_id: str,
+    source_lang: str,
+    target_lang: str,
+    provider: str,
+    model_used: str,
+    content_type: str,
+    character_count: int,
+    processing_time_ms: float,
+    status: str,
+    cache_hit: bool = False,
+    quality_score: Optional[float] = None,
+    error_message: Optional[str] = None
+):
+    """Record a translation in the history."""
+    import uuid
+    
+    record = TranslationRecord(
+        id=str(uuid.uuid4()),
+        timestamp=time.time(),
+        client_id=client_id,
+        source_language=source_lang,
+        target_language=target_lang,
+        provider=provider,
+        model_used=model_used,
+        content_type=content_type,
+        character_count=character_count,
+        processing_time_ms=processing_time_ms,
+        status=status,
+        cache_hit=cache_hit,
+        quality_score=quality_score,
+        error_message=error_message
+    )
+    
+    _translation_history.append(record)
+    
+    # Keep only last 10,000 records to prevent memory issues
+    if len(_translation_history) > 10000:
+        _translation_history[:] = _translation_history[-10000:]
 
 
 
@@ -310,6 +477,149 @@ async def get_supported_languages(provider: str):
             provider=provider,
             languages=languages,
             total_count=len(languages)
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+@router.get("/language-pairs/{provider}", response_model=EnhancedLanguagesResponse)
+async def get_language_pairs_by_provider(provider: str):
+    """
+    Get detailed language pairs and capabilities for a specific provider.
+    
+    This enhanced endpoint provides comprehensive information about:
+    - Supported language pairs with quality ratings
+    - Available models and their characteristics
+    - Provider-specific features and capabilities
+    - Processing time estimates for different language pairs
+    """
+    try:
+        available_providers = translation_service.get_available_providers()
+        if provider not in available_providers:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Provider '{provider}' not found. Available: {available_providers}"
+            )
+
+        # Get basic language support
+        languages = translation_service.get_supported_languages(provider)
+        
+        # Get provider models
+        all_models = translation_service.get_provider_models()
+        provider_models = all_models.get(provider, {})
+        
+        # Create language pairs
+        language_pairs = []
+        
+        # Define supported pairs for each provider
+        if provider == "openai":
+            # OpenAI supports many language pairs, focus on project requirements
+            primary_pairs = [
+                ("en", "ar", "English to Arabic", ["structured", "batch", "html", "rtl"], "high", "fast"),
+                ("en", "bs", "English to Bosnian", ["structured", "batch", "html"], "high", "fast"),
+                ("ar", "en", "Arabic to English", ["structured", "batch", "html", "rtl"], "high", "fast"),
+                ("bs", "en", "Bosnian to English", ["structured", "batch", "html"], "high", "fast"),
+            ]
+            
+            # Add other common pairs
+            for source in ["en", "ar", "bs"]:
+                for target in languages:
+                    if source != target and (source, target) not in [(s, t) for s, t, _, _, _, _ in primary_pairs]:
+                        features = ["structured", "batch"]
+                        if target == "ar":
+                            features.append("rtl")
+                        if source in ["en", "ar", "bs"] or target in ["en", "ar", "bs"]:
+                            quality = "high"
+                            speed = "fast"
+                        else:
+                            quality = "medium"
+                            speed = "medium"
+                        
+                        language_pairs.append(LanguagePair(
+                            source=source,
+                            target=target,
+                            name=f"{source.upper()} to {target.upper()}",
+                            supported_features=features,
+                            quality_rating=quality,
+                            processing_time=speed
+                        ))
+            
+            # Add primary pairs
+            for source, target, name, features, quality, speed in primary_pairs:
+                language_pairs.append(LanguagePair(
+                    source=source,
+                    target=target,
+                    name=name,
+                    supported_features=features,
+                    quality_rating=quality,
+                    processing_time=speed
+                ))
+                
+        elif provider in ["anthropic", "mistral", "deepseek"]:
+            # These providers have similar capabilities to OpenAI
+            primary_pairs = [
+                ("en", "ar", "English to Arabic", ["structured", "batch", "html", "rtl"], "high", "medium"),
+                ("en", "bs", "English to Bosnian", ["structured", "batch", "html"], "high", "medium"),
+                ("ar", "en", "Arabic to English", ["structured", "batch", "html", "rtl"], "high", "medium"),
+                ("bs", "en", "Bosnian to English", ["structured", "batch", "html"], "high", "medium"),
+            ]
+            
+            for source, target, name, features, quality, speed in primary_pairs:
+                language_pairs.append(LanguagePair(
+                    source=source,
+                    target=target,
+                    name=name,
+                    supported_features=features,
+                    quality_rating=quality,
+                    processing_time=speed
+                ))
+        
+        # Define provider-specific features
+        provider_features = {
+            "openai": ["structured_content", "batch_processing", "html_preservation", "rtl_support", "context_awareness", "fast_processing"],
+            "anthropic": ["structured_content", "batch_processing", "html_preservation", "rtl_support", "context_awareness", "high_quality"],
+            "mistral": ["structured_content", "batch_processing", "html_preservation", "european_languages", "fast_processing"],
+            "deepseek": ["structured_content", "batch_processing", "html_preservation", "cost_effective", "reliable"]
+        }
+        
+        # Provider information
+        provider_info = {
+            "openai": {
+                "name": "OpenAI",
+                "description": "High-quality translations with fast processing and excellent context understanding",
+                "strengths": ["Context awareness", "Fast processing", "Wide language support"],
+                "best_for": ["General translations", "Technical content", "RTL languages"]
+            },
+            "anthropic": {
+                "name": "Anthropic Claude",
+                "description": "Premium translations with excellent cultural sensitivity and nuanced understanding",
+                "strengths": ["Cultural sensitivity", "Nuanced translations", "Context preservation"],
+                "best_for": ["Cultural content", "Marketing materials", "Creative writing"]
+            },
+            "mistral": {
+                "name": "Mistral AI",
+                "description": "Efficient translations with strong European language support",
+                "strengths": ["European languages", "Technical accuracy", "Consistent quality"],
+                "best_for": ["European content", "Technical documentation", "Business translations"]
+            },
+            "deepseek": {
+                "name": "DeepSeek",
+                "description": "Cost-effective translations with reliable quality and good performance",
+                "strengths": ["Cost efficiency", "Reliable quality", "Good performance"],
+                "best_for": ["Large volumes", "Budget-conscious projects", "Consistent workflows"]
+            }
+        }
+
+        return EnhancedLanguagesResponse(
+            provider=provider,
+            models=provider_models,
+            language_pairs=language_pairs,
+            supported_features=provider_features.get(provider, []),
+            total_pairs=len(language_pairs),
+            provider_info=provider_info.get(provider, {})
         )
 
     except HTTPException:
@@ -565,5 +875,204 @@ async def validate_translation_request(request: ValidationRequest):
             "data": validation_result
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+@router.get("/metrics", response_model=ServiceMetrics)
+async def get_service_metrics():
+    """
+    Get comprehensive service metrics including performance, provider statistics, and cache information.
+    
+    **Metrics Included:**
+    - Service uptime and overall health status
+    - Request counts and success/failure rates
+    - Average response times globally and per provider
+    - Provider-specific statistics and availability
+    - Cache performance metrics
+    - Real-time system status
+    
+    **Use Cases:**
+    - Service monitoring and alerting
+    - Performance optimization analysis
+    - Provider performance comparison
+    - Cache efficiency tracking
+    - SLA monitoring and reporting
+    """
+    try:
+        import time
+        from ..services.ai_response_cache import get_cache
+        
+        current_time = time.time()
+        uptime = current_time - _service_metrics["start_time"]
+        
+        # Calculate average response time
+        response_times = _service_metrics["response_times"]
+        avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+        
+        # Calculate success rate
+        total_requests = _service_metrics["total_requests"]
+        success_rate = (_service_metrics["successful_requests"] / total_requests * 100) if total_requests > 0 else 100
+        
+        # Provider statistics
+        provider_stats = {}
+        available_providers = translation_service.get_available_providers()
+        
+        for provider in available_providers:
+            provider_data = _service_metrics["provider_stats"].get(provider, {
+                "requests": 0,
+                "successes": 0,
+                "failures": 0,
+                "response_times": []
+            })
+            
+            provider_response_times = provider_data["response_times"]
+            provider_avg_time = sum(provider_response_times) / len(provider_response_times) if provider_response_times else 0
+            provider_requests = provider_data["requests"]
+            provider_success_rate = (provider_data["successes"] / provider_requests * 100) if provider_requests > 0 else 100
+            
+            provider_stats[provider] = {
+                "available": True,  # In a real implementation, this would check actual provider availability
+                "requests": provider_requests,
+                "successes": provider_data["successes"],
+                "failures": provider_data["failures"],
+                "success_rate": round(provider_success_rate, 2),
+                "average_response_time_ms": round(provider_avg_time, 2),
+                "last_request": "recently" if provider_requests > 0 else "never"
+            }
+        
+        # Get cache statistics
+        try:
+            cache = await get_cache()
+            cache_stats = await cache.get_cache_info()
+        except Exception:
+            cache_stats = {
+                "status": "unavailable",
+                "error": "Could not retrieve cache statistics"
+            }
+        
+        # Determine overall service status
+        if success_rate > 95 and avg_response_time < 2000:
+            status = "healthy"
+        elif success_rate > 90 and avg_response_time < 5000:
+            status = "degraded"
+        else:
+            status = "unhealthy"
+        
+        return ServiceMetrics(
+            status=status,
+            uptime_seconds=round(uptime, 2),
+            providers=provider_stats,
+            cache_stats=cache_stats,
+            total_requests=total_requests,
+            successful_requests=_service_metrics["successful_requests"],
+            failed_requests=_service_metrics["failed_requests"],
+            average_response_time_ms=round(avg_response_time, 2),
+            success_rate=round(success_rate, 2),
+            timestamp=current_time
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+@router.get("/history", response_model=TranslationHistoryResponse)
+async def get_translation_history(
+    client_id: Optional[str] = None,
+    provider: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    content_type: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0
+):
+    """
+    Get translation history with filtering and pagination support.
+    
+    **Query Parameters:**
+    - `client_id`: Filter by specific client
+    - `provider`: Filter by AI provider (openai, anthropic, mistral, deepseek)
+    - `start_date`: Filter by start date (ISO format: 2024-01-01T00:00:00Z)
+    - `end_date`: Filter by end date (ISO format: 2024-12-31T23:59:59Z)
+    - `content_type`: Filter by content type (text, batch, structured)
+    - `status`: Filter by translation status (success, failed, cached)
+    - `limit`: Maximum records to return (1-1000, default: 100)
+    - `offset`: Number of records to skip for pagination (default: 0)
+    
+    **Use Cases:**
+    - Audit trail for translation activities
+    - Performance analysis and optimization
+    - Client usage tracking and billing
+    - Error analysis and debugging
+    - Cost analysis per client/provider
+    
+    **Response includes:**
+    - Paginated translation records
+    - Total count for pagination
+    - Detailed metadata for each translation
+    """
+    try:
+        from datetime import datetime
+        
+        # Validate parameters
+        if limit < 1 or limit > 1000:
+            raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+        if offset < 0:
+            raise HTTPException(status_code=400, detail="offset must be non-negative")
+        
+        # Parse date filters
+        start_timestamp = None
+        end_timestamp = None
+        
+        if start_date:
+            try:
+                start_timestamp = datetime.fromisoformat(start_date.replace('Z', '+00:00')).timestamp()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid start_date format. Use ISO format: 2024-01-01T00:00:00Z")
+        
+        if end_date:
+            try:
+                end_timestamp = datetime.fromisoformat(end_date.replace('Z', '+00:00')).timestamp()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid end_date format. Use ISO format: 2024-12-31T23:59:59Z")
+        
+        # Filter records
+        filtered_records = []
+        for record in _translation_history:
+            # Apply filters
+            if client_id and record.client_id != client_id:
+                continue
+            if provider and record.provider != provider:
+                continue
+            if start_timestamp and record.timestamp < start_timestamp:
+                continue
+            if end_timestamp and record.timestamp > end_timestamp:
+                continue
+            if content_type and record.content_type != content_type:
+                continue
+            if status and record.status != status:
+                continue
+            
+            filtered_records.append(record)
+        
+        # Sort by timestamp (newest first)
+        filtered_records.sort(key=lambda x: x.timestamp, reverse=True)
+        
+        # Apply pagination
+        total_count = len(filtered_records)
+        paginated_records = filtered_records[offset:offset + limit]
+        has_more = (offset + limit) < total_count
+        
+        return TranslationHistoryResponse(
+            records=paginated_records,
+            total_count=total_count,
+            limit=limit,
+            offset=offset,
+            has_more=has_more
+        )
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e

@@ -84,13 +84,19 @@ async def create_field_config(
             field_config=config.dict(exclude={'client_id', 'collection_name'})
         )
         
-        # Retrieve the saved configuration
-        saved_config = await field_mapper.get_field_config(
+        # Get the saved configuration directly from database
+        db_config = db.query(FieldConfig).filter_by(
             client_id=config.client_id,
             collection_name=config.collection_name
-        )
+        ).first()
         
-        return FieldConfigResponse(**saved_config)
+        if not db_config:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve saved configuration"
+            )
+        
+        return FieldConfigResponse(**db_config.to_dict())
         
     except Exception as e:
         raise HTTPException(
@@ -107,16 +113,27 @@ async def get_field_config(
 ):
     """Get field configuration for a collection."""
     try:
-        field_mapper = FieldMapper(db)
-        config = await field_mapper.get_field_config(client_id, collection_name)
+        # Get directly from database to ensure all fields are present
+        db_config = db.query(FieldConfig).filter_by(
+            client_id=client_id,
+            collection_name=collection_name
+        ).first()
         
-        if not config.get('id'):
+        if not db_config:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Field configuration not found"
             )
         
-        return FieldConfigResponse(**config)
+        return FieldConfigResponse(**db_config.to_dict())
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve field configuration: {str(e)}"
+        )
         
     except HTTPException:
         raise

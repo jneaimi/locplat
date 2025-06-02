@@ -1,8 +1,8 @@
 {
   "info": {
     "name": "LocPlat - AI Translation Service",
-    "description": "Complete Postman collection for LocPlat translation service with field mapping system and Directus webhooks",
-    "version": "2.2.0",
+    "description": "Complete Postman collection for LocPlat translation service with field mapping system, Directus webhooks, metrics, and history tracking",
+    "version": "3.0.0",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,7 +11,7 @@
       "value": "http://localhost:8000"
     },
     {
-      "key": "openai_api_key",
+      "key": "openai_api_key", 
       "value": "sk-your-openai-key-here"
     },
     {
@@ -23,715 +23,237 @@
       "value": "your-mistral-key-here"
     },
     {
-      "key": "client_id",
-      "value": "test-directus-client"
+      "key": "deepseek_api_key",
+      "value": "your-deepseek-key-here"
     },
     {
-      "key": "webhook_secret",
-      "value": "my-webhook-secret-key"
+      "key": "client_id",
+      "value": "test-directus-client"
     }
   ],
   "item": [
     {
       "name": "Health Check",
-      "item": [
-        {
-          "name": "Service Health Status",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Service is healthy', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.status).to.equal('ok');",
-                  "    pm.expect(responseJson.services.database).to.equal('ok');",
-                  "    pm.expect(responseJson.services.redis).to.equal('ok');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/health",
-              "host": ["{{base_url}}"],
-              "path": ["health"]
-            },
-            "description": "Check if all services are operational"
-          }
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
         },
-        {
-          "name": "Webhook Health Check",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Webhook service is healthy', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.status).to.equal('healthy');",
-                  "    pm.expect(responseJson.service).to.equal('directus-webhooks');",
-                  "    pm.expect(responseJson.endpoints).to.include('/webhooks/directus/translate');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/health",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "health"]
-            },
-            "description": "Check webhook service health"
-          }
-        }
-      ]
-    },    {
-      "name": "🪝 Directus Webhooks",
-      "item": [
-        {
-          "name": "Get Webhook Info",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Webhook info retrieved successfully', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.webhook_url).to.equal('/api/v1/webhooks/directus/translate');",
-                  "    pm.expect(responseJson.method).to.equal('POST');",
-                  "    pm.expect(responseJson.supported_events).to.include('items.update');",
-                  "    pm.expect(responseJson.required_fields).to.include('client_id');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/info",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "info"]
-            },
-            "description": "Get webhook setup information and examples"
-          }
-        },
-        {
-          "name": "Validate Webhook Configuration",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Webhook configuration is valid', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.success).to.be.true;",
-                  "    pm.expect(responseJson.data.api_key_valid).to.be.true;",
-                  "    pm.expect(responseJson.data.field_paths_count).to.be.greaterThan(0);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"collection\": \"articles\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"target_language\": \"ar\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/validate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "validate"]
-            },
-            "description": "Validate webhook configuration before setup"
-          }
-        },
-        {
-          "name": "Test Webhook (Dry Run)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Webhook dry run successful', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.success).to.be.true;",
-                  "    pm.expect(responseJson.operation).to.equal('preview');",
-                  "    pm.expect(responseJson.metadata.dry_run).to.be.true;",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sample_data\": {\n    \"id\": 123,\n    \"title\": \"Breaking News: AI Translation Revolution\",\n    \"content\": \"<p>The latest developments in <strong>AI-powered translation</strong> are changing the landscape of content management systems.</p>\",\n    \"summary\": \"Exploring the impact of AI translation on modern CMS platforms\",\n    \"metadata\": {\n      \"description\": \"SEO-optimized description for AI translation article\"\n    }\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"collection\": \"articles\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"dry_run\": true\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/test",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "test"]
-            },
-            "description": "Test webhook processing without actual translation (preview mode)"
-          }
-        },
-        {
-          "name": "Test Webhook (Full Translation)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Webhook translation successful', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.success).to.be.true;",
-                  "    pm.expect(responseJson.operation).to.equal('translate');",
-                  "    pm.expect(responseJson.metadata.dry_run).to.be.false;",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sample_data\": {\n    \"id\": 456,\n    \"title\": \"Welcome to LocPlat\",\n    \"content\": \"<p>Experience seamless AI translation for your <em>Directus CMS</em>.</p>\",\n    \"summary\": \"LocPlat integration overview\"\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"collection\": \"articles\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"dry_run\": false\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/test",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "test"]
-            },
-            "description": "Test webhook with actual translation"
-          }
-        }
-      ]
-    },    {
-      "name": "🎯 Webhook Simulation",
-      "item": [
-        {
-          "name": "Simulate Directus Article Create",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Article creation webhook successful', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.success).to.be.true;",
-                  "    pm.expect(responseJson.operation).to.equal('upsert');",
-                  "    pm.expect(responseJson.collection).to.equal('articles_translations');",
-                  "    pm.expect(responseJson.translated_data).to.have.property('articles_id');",
-                  "    pm.expect(responseJson.translated_data.languages_code).to.equal('ar');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"event\": \"items.create\",\n  \"collection\": \"articles\",\n  \"key\": \"789\",\n  \"data\": {\n    \"id\": 789,\n    \"title\": \"Revolutionary AI Translation Technology\",\n    \"content\": \"<h2>Introduction</h2><p>Artificial Intelligence is transforming the way we handle <strong>multilingual content management</strong>. With advanced neural networks, we can now achieve near-human quality translations in real-time.</p><h3>Key Benefits</h3><ul><li>Real-time processing</li><li>Context-aware translations</li><li>HTML structure preservation</li></ul>\",\n    \"summary\": \"Discover how AI is revolutionizing translation technology for content management systems\",\n    \"metadata\": {\n      \"description\": \"Comprehensive guide to AI translation technology and its applications in modern CMS platforms\"\n    },\n    \"status\": \"published\",\n    \"created_at\": \"2024-06-02T10:15:00Z\"\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"source_language\": \"en\",\n  \"model\": \"gpt-4o-mini\",\n  \"context\": \"Technical article about AI translation for CMS platforms\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/translate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "translate"]
-            },
-            "description": "Simulate Directus creating a new article with automatic translation"
-          }
-        },
-        {
-          "name": "Simulate Directus Article Update",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Article update webhook successful', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.success).to.be.true;",
-                  "    pm.expect(responseJson.metadata.event).to.equal('items.update');",
-                  "    pm.expect(responseJson.metadata.provider_used).to.equal('anthropic');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"event\": \"items.update\",\n  \"collection\": \"articles\",\n  \"key\": \"789\",\n  \"data\": {\n    \"id\": 789,\n    \"title\": \"Updated: Revolutionary AI Translation Technology\",\n    \"content\": \"<h2>Introduction (Updated)</h2><p>Artificial Intelligence continues to evolve, transforming the way we handle <strong>multilingual content management</strong> with even greater precision and speed.</p><h3>Latest Features</h3><ul><li>Enhanced real-time processing</li><li>Improved context-aware translations</li><li>Advanced HTML structure preservation</li><li>Cultural adaptation capabilities</li></ul>\",\n    \"summary\": \"Updated guide exploring the latest developments in AI translation technology\",\n    \"metadata\": {\n      \"description\": \"Updated comprehensive guide covering the newest AI translation features and improvements\"\n    },\n    \"status\": \"published\"\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"target_language\": \"ar\",\n  \"provider\": \"anthropic\",\n  \"api_key\": \"{{anthropic_api_key}}\",\n  \"source_language\": \"en\",\n  \"model\": \"claude-3-haiku-20240307\",\n  \"context\": \"Updated technical article about AI translation improvements\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/translate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "translate"]
-            },
-            "description": "Simulate Directus updating an existing article"
-          }
-        },
-        {
-          "name": "Simulate E-commerce Product Translation",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"event\": \"items.create\",\n  \"collection\": \"products\",\n  \"key\": \"P001\",\n  \"data\": {\n    \"id\": \"P001\",\n    \"name\": \"Premium Wireless Earbuds\",\n    \"description\": \"Experience exceptional sound quality with our flagship wireless earbuds. Features include:\\n\\n• Active Noise Cancellation (ANC)\\n• 35-hour total battery life\\n• IPX7 water resistance\\n• Hi-Res Audio certification\\n• Touch controls\\n• Fast charging (15 min = 3 hours playback)\",\n    \"features\": \"ANC, Long battery, Water resistant, Hi-Res Audio, Touch controls\",\n    \"price\": 299.99,\n    \"category\": \"Electronics\",\n    \"specifications\": {\n      \"weight\": \"5.4g per earbud\",\n      \"charging_case\": \"52g\",\n      \"connectivity\": \"Bluetooth 5.3\",\n      \"warranty\": \"2 years international\"\n    }\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"source_language\": \"en\",\n  \"context\": \"E-commerce product description for premium audio device\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/translate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "translate"]
-            },
-            "description": "Simulate translating an e-commerce product for Arabic market"
-          }
-        },
-        {
-          "name": "Simulate Blog Post with Rich Content",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"event\": \"items.create\",\n  \"collection\": \"articles\",\n  \"key\": \"999\",\n  \"data\": {\n    \"id\": 999,\n    \"title\": \"The Future of Multilingual Content Management\",\n    \"content\": \"<article><header><h1>Embracing Global Communication</h1></header><section><h2>The Challenge</h2><p>Modern businesses face an unprecedented challenge: delivering <strong>consistent, high-quality content</strong> across multiple languages and cultures. Traditional translation methods are often <em>slow, expensive, and inconsistent</em>.</p><blockquote><p>\\\"The ability to communicate effectively across languages is no longer a luxury—it's a necessity for global success.\\\"</p></blockquote></section><section><h2>The Solution</h2><p>AI-powered translation systems like <strong>LocPlat</strong> are revolutionizing this space by providing:</p><ul><li><strong>Real-time translation</strong> capabilities</li><li><strong>Context-aware processing</strong> that understands nuance</li><li><strong>Seamless CMS integration</strong> with platforms like Directus</li><li><strong>Cost-effective scaling</strong> for businesses of all sizes</li></ul></section><section><h2>Implementation Benefits</h2><p>Organizations implementing AI translation solutions report:</p><ol><li>60% reduction in translation costs</li><li>80% faster content deployment</li><li>95% consistency across languages</li><li>Enhanced global market penetration</li></ol></section></article>\",\n    \"summary\": \"Explore how AI-powered translation is transforming global content management strategies for modern businesses\",\n    \"metadata\": {\n      \"description\": \"Comprehensive analysis of AI translation impact on multilingual content management, featuring real-world benefits and implementation strategies\",\n      \"keywords\": \"AI translation, multilingual content, global communication, CMS integration, LocPlat\",\n      \"author\": \"LocPlat Team\",\n      \"reading_time\": \"8 minutes\"\n    },\n    \"published_at\": \"2024-06-02T10:30:00Z\",\n    \"category\": \"Technology\",\n    \"tags\": [\"AI\", \"Translation\", \"CMS\", \"Globalization\"]\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"source_language\": \"en\",\n  \"model\": \"gpt-4o-mini\",\n  \"context\": \"Professional blog post about AI translation technology for business audience\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/translate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "translate"]
-            },
-            "description": "Simulate translating a rich blog post with complex HTML structure"
-          }
-        }
-      ]
-    },    {
-      "name": "🔒 Webhook Security Tests",
-      "item": [
-        {
-          "name": "Test Webhook with Signature",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "// Generate HMAC signature for webhook security testing",
-                  "const CryptoJS = require('crypto-js');",
-                  "const secret = pm.variables.get('webhook_secret');",
-                  "const payload = pm.request.body.raw;",
-                  "const signature = 'sha256=' + CryptoJS.HmacSHA256(payload, secret).toString(CryptoJS.enc.Hex);",
-                  "pm.request.headers.add({key: 'X-Signature', value: signature});"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Webhook with valid signature successful', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.success).to.be.true;",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"event\": \"items.update\",\n  \"collection\": \"articles\",\n  \"key\": \"secure-123\",\n  \"data\": {\n    \"id\": \"secure-123\",\n    \"title\": \"Secure Webhook Test\",\n    \"content\": \"<p>Testing webhook security with HMAC signature verification.</p>\"\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"webhook_secret\": \"{{webhook_secret}}\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/translate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "translate"]
-            },
-            "description": "Test webhook with HMAC signature verification"
-          }
-        },
-        {
-          "name": "Test Invalid Signature (Should Fail)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Invalid signature rejected', function () {",
-                  "    pm.response.to.have.status(401);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.detail).to.include('Invalid webhook signature');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Signature",
-                "value": "sha256=invalid_signature_hash"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"event\": \"items.update\",\n  \"collection\": \"articles\",\n  \"key\": \"insecure-456\",\n  \"data\": {\n    \"id\": \"insecure-456\",\n    \"title\": \"Should Fail\",\n    \"content\": \"<p>This should fail due to invalid signature.</p>\"\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"webhook_secret\": \"{{webhook_secret}}\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/translate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "translate"]
-            },
-            "description": "Test webhook security by providing invalid signature"
-          }
-        },
-        {
-          "name": "Test Delete Event (Should Skip)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Delete event skipped', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.success).to.be.true;",
-                  "    pm.expect(responseJson.operation).to.equal('skip');",
-                  "    pm.expect(responseJson.metadata.reason).to.include('Delete events are not processed');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"event\": \"items.delete\",\n  \"collection\": \"articles\",\n  \"key\": \"deleted-789\",\n  \"data\": {\n    \"id\": \"deleted-789\"\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/translate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "translate"]
-            },
-            "description": "Test that delete events are properly skipped"
-          }
-        }
-      ]
-    },    {
-      "name": "Field Mapping Configuration",
-      "item": [
-        {
-          "name": "Create Field Config - Articles",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Configuration created successfully', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.client_id).to.equal('test-directus-client');",
-                  "    pm.expect(responseJson.collection_name).to.equal('articles');",
-                  "    pm.expect(responseJson.field_paths).to.include('title');",
-                  "    pm.expect(responseJson.field_paths).to.include('metadata.description');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"collection_name\": \"articles\",\n  \"field_paths\": [\n    \"title\",\n    \"content\",\n    \"summary\",\n    \"metadata.description\"\n  ],\n  \"field_types\": {\n    \"title\": \"text\",\n    \"content\": \"wysiwyg\",\n    \"summary\": \"textarea\",\n    \"metadata.description\": \"text\"\n  },\n  \"directus_translation_pattern\": \"collection_translations\",\n  \"batch_processing\": false,\n  \"preserve_html_structure\": true\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/field-mapping/config",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "field-mapping", "config"]
-            },
-            "description": "Create field mapping configuration for articles"
-          }
-        },
-        {
-          "name": "Create Field Config - Products (RTL)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"collection_name\": \"products\",\n  \"field_paths\": [\n    \"name\",\n    \"description\",\n    \"features\"\n  ],\n  \"field_types\": {\n    \"name\": \"text\",\n    \"description\": \"textarea\",\n    \"features\": \"text\"\n  },\n  \"rtl_field_mapping\": {\n    \"ar\": {\n      \"field_paths\": [\"name\", \"description\", \"features\"],\n      \"custom_processing\": true\n    }\n  },\n  \"directus_translation_pattern\": \"language_collections\",\n  \"batch_processing\": true\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/field-mapping/config",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "field-mapping", "config"]
-            },
-            "description": "Create field configuration for products with RTL support"
-          }
-        },
-        {
-          "name": "Get Field Config",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Configuration retrieved successfully', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.field_paths).to.be.an('array');",
-                  "    pm.expect(responseJson.field_paths.length).to.be.greaterThan(0);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/field-mapping/config/{{client_id}}/articles",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "field-mapping", "config", "{{client_id}}", "articles"]
-            },
-            "description": "Retrieve field configuration"
-          }
-        }
-      ]
-    },    {
-      "name": "Translation Tests",
-      "item": [
-        {
-          "name": "OpenAI Translation",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"text\": \"Hello, welcome to LocPlat!\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o-mini\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/translate/",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "translate", ""]
-            },
-            "description": "Single text translation"
-          }
-        },
-        {
-          "name": "Structured Content Translation",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Structured translation successful', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.success).to.be.true;",
-                  "    pm.expect(responseJson.data).to.have.property('translated_content');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"content\": {\n    \"id\": 1,\n    \"title\": \"Introduction to LocPlat\",\n    \"content\": \"<p>LocPlat is a powerful <strong>AI translation service</strong> designed for Directus CMS.</p>\",\n    \"summary\": \"Learn about LocPlat's capabilities\",\n    \"metadata\": {\n      \"description\": \"Comprehensive guide to LocPlat AI translation\"\n    }\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"collection_name\": \"articles\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o-mini\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/translate/structured",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "translate", "structured"]
-            },
-            "description": "Test structured content translation with field mapping"
-          }
-        }
-      ]
+        "description": "Check if all services are operational"
+      }
     },
     {
-      "name": "🔍 Error Handling Tests",
-      "item": [
-        {
-          "name": "Invalid API Key",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Invalid API key handled properly', function () {",
-                  "    pm.response.to.have.status(400);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.detail).to.include('Translation error');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"text\": \"Test translation\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"invalid-key-12345\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/translate/",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "translate", ""]
-            },
-            "description": "Test error handling with invalid API key"
-          }
+      "name": "Service Metrics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/translate/metrics",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "translate", "metrics"]
         },
-        {
-          "name": "Missing Field Configuration",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Missing configuration handled properly', function () {",
-                  "    pm.response.to.have.status(400);",
-                  "    const responseJson = pm.response.json();",
-                  "    pm.expect(responseJson.detail).to.include('No field mapping configuration found');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"client_id\": \"nonexistent-client\",\n  \"collection\": \"nonexistent-collection\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"target_language\": \"ar\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/webhooks/directus/validate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "webhooks", "directus", "validate"]
-            },
-            "description": "Test webhook validation with missing field configuration"
+        "description": "Get comprehensive service metrics"
+      }
+    },
+    {
+      "name": "Translation History",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/translate/history",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "translate", "history"]
+        },
+        "description": "Get translation history with pagination"
+      }
+    },
+    {
+      "name": "Available Providers",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/translate/providers",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "translate", "providers"]
+        },
+        "description": "Get list of available AI providers"
+      }
+    },
+    {
+      "name": "Language Pairs - OpenAI",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/translate/language-pairs/openai",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "translate", "language-pairs", "openai"]
+        },
+        "description": "Get enhanced language pairs for OpenAI"
+      }
+    },
+    {
+      "name": "Single Text Translation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
           }
-        }
-      ]
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"text\": \"Hello, welcome to LocPlat!\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"model\": \"gpt-4o-mini\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/translate/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "translate", ""]
+        },
+        "description": "Translate single text using OpenAI"
+      }
+    },
+    {
+      "name": "Batch Translation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"texts\": [\n    \"Welcome to LocPlat\",\n    \"AI-powered translation service\",\n    \"Seamless Directus CMS integration\"\n  ],\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/translate/batch",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "translate", "batch"]
+        },
+        "description": "Translate multiple texts in batch"
+      }
+    },
+    {
+      "name": "Structured Translation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"content\": {\n    \"title\": \"Introduction to LocPlat\",\n    \"content\": \"<p>LocPlat is a powerful AI translation service.</p>\",\n    \"summary\": \"Learn about LocPlat capabilities\"\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"collection_name\": \"articles\",\n  \"source_lang\": \"en\",\n  \"target_lang\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/translate/structured",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "translate", "structured"]
+        },
+        "description": "Translate structured content with field mapping"
+      }
+    },
+    {
+      "name": "Create Field Config",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"collection_name\": \"articles\",\n  \"field_paths\": [\"title\", \"content\", \"summary\"],\n  \"field_types\": {\n    \"title\": \"text\",\n    \"content\": \"wysiwyg\",\n    \"summary\": \"textarea\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/field-mapping/config",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "field-mapping", "config"]
+        },
+        "description": "Create field mapping configuration"
+      }
+    },
+    {
+      "name": "Get Field Config",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/field-mapping/config/{{client_id}}/articles",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "field-mapping", "config", "{{client_id}}", "articles"]
+        },
+        "description": "Get field mapping configuration"
+      }
+    },
+    {
+      "name": "Cache Statistics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/cache/stats",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "cache", "stats"]
+        },
+        "description": "Get cache performance statistics"
+      }
+    },
+    {
+      "name": "Webhook Validation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"collection\": \"articles\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"target_language\": \"ar\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/webhooks/directus/validate",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "webhooks", "directus", "validate"]
+        },
+        "description": "Validate webhook configuration"
+      }
+    },
+    {
+      "name": "Webhook Test",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sample_data\": {\n    \"title\": \"Test Article\",\n    \"content\": \"<p>Test content for webhook.</p>\"\n  },\n  \"client_id\": \"{{client_id}}\",\n  \"collection\": \"articles\",\n  \"target_language\": \"ar\",\n  \"provider\": \"openai\",\n  \"api_key\": \"{{openai_api_key}}\",\n  \"dry_run\": true\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/webhooks/directus/test",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "webhooks", "directus", "test"]
+        },
+        "description": "Test webhook with dry run"
+      }
     }
   ]
 }
