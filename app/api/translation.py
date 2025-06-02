@@ -189,6 +189,18 @@ async def translate_text(request: FlexibleTranslationRequest):
             context=request.context
         )
 
+        # Create response with RTL display enhancement
+        language_direction = result.metadata.get("language_direction", "ltr")
+        metadata = result.metadata.copy()
+        
+        # Add RTL display helpers for Arabic and other RTL languages
+        if language_direction == "rtl":
+            metadata["display_options"] = {
+                "terminal_rtl": f"\u202E{result.translated_text}\u202C",
+                "html_rtl": f'<div dir="rtl" style="text-align: right; direction: rtl;">{result.translated_text}</div>',
+                "css_attributes": 'dir="rtl" style="text-align: right; direction: rtl;"'
+            }
+
         return TranslationResponse(
             translated_text=result.translated_text,
             provider_used=result.provider_used,
@@ -196,8 +208,8 @@ async def translate_text(request: FlexibleTranslationRequest):
             source_lang=result.source_lang,
             target_lang=result.target_lang,
             quality_score=result.quality_score,
-            language_direction=result.metadata.get("language_direction", "ltr"),
-            metadata=result.metadata
+            language_direction=language_direction,
+            metadata=metadata
         )
 
     except TranslationError as e:
@@ -222,19 +234,29 @@ async def translate_batch(request: FlexibleBatchTranslationRequest):
             context=request.context
         )
 
-        response_results = [
-            TranslationResponse(
+        response_results = []
+        for result in results:
+            language_direction = result.metadata.get("language_direction", "ltr")
+            metadata = result.metadata.copy()
+            
+            # Add RTL display helpers for Arabic and other RTL languages
+            if language_direction == "rtl":
+                metadata["display_options"] = {
+                    "terminal_rtl": f"\u202E{result.translated_text}\u202C",
+                    "html_rtl": f'<div dir="rtl" style="text-align: right; direction: rtl;">{result.translated_text}</div>',
+                    "css_attributes": 'dir="rtl" style="text-align: right; direction: rtl;"'
+                }
+
+            response_results.append(TranslationResponse(
                 translated_text=result.translated_text,
                 provider_used=result.provider_used,
                 model_used=result.metadata.get("model_used", "default"),
                 source_lang=result.source_lang,
                 target_lang=result.target_lang,
                 quality_score=result.quality_score,
-                language_direction=result.metadata.get("language_direction", "ltr"),
-                metadata=result.metadata
-            )
-            for result in results
-        ]
+                language_direction=language_direction,
+                metadata=metadata
+            ))
 
         return BatchTranslationResponse(
             results=response_results,
