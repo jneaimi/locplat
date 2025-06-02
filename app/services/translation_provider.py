@@ -237,14 +237,26 @@ class TranslationProvider(ABC):
         source_name = lang_names.get(source_lang, source_lang.upper())
         target_name = lang_names.get(target_lang, target_lang.upper())
 
-        prompt = f"Translate the following {source_name} text to {target_name}:"
+        # Check if this is an HTML fragment translation (indicated by specific context)
+        is_html_fragment = safe_context and "HTML fragment translation" in safe_context
 
-        if target_lang == 'ar':
-            prompt += " Please maintain cultural sensitivity and appropriate formal register."
-        if target_lang == 'bs':
-            prompt += " Use Latin script unless otherwise specified."
-        if safe_context:
+        if is_html_fragment:
+            # For HTML fragments, be very strict about only translating the exact content
+            prompt = f"Translate this {source_name} text fragment to {target_name}. Translate ONLY the given text, do not add any extra words or content:"
+        else:
+            # Standard translation prompt
+            prompt = f"Translate the following {source_name} text to {target_name}:"
+            
+            if target_lang == 'ar' and not is_html_fragment:
+                prompt += " Please maintain cultural sensitivity and appropriate formal register."
+            if target_lang == 'bs':
+                prompt += " Use Latin script unless otherwise specified."
+        
+        if safe_context and not is_html_fragment:
             prompt += f" Context: {safe_context}"
+        elif is_html_fragment:
+            # For HTML fragments, just add a note about preserving meaning
+            prompt += " Preserve the exact meaning."
 
         prompt += f"\n\nText to translate: {safe_text}"
         return prompt

@@ -224,12 +224,15 @@ class FieldMapper:
         soup = BeautifulSoup(html, 'html.parser')
         text_nodes = []
         
+        # Find all text nodes that are not just whitespace
         for element in soup.find_all(text=True):
-            if element.strip():
+            text_content = element.strip()
+            if text_content and element.parent:
+                # Store original element reference for easier reassembly
                 text_nodes.append({
-                    'text': element.strip(),
-                    'path': self._get_element_path(element),
-                    'parent_tag': element.parent.name if element.parent else None,
+                    'text': text_content,
+                    'element': element,  # Store reference to actual element
+                    'parent_tag': element.parent.name,
                     'parent_attrs': element.parent.attrs if element.parent else {}
                 })
         
@@ -238,27 +241,39 @@ class FieldMapper:
     def _get_element_path(self, element) -> str:
         """Generate a path to the element for reassembly."""
         path = []
-        parent = element.parent
-        while parent:
-            siblings = parent.find_all(parent.name, recursive=False)
+        current = element
+        
+        # Build path from current element to root
+        while current and current.name and current.name != '[document]':
+            siblings = current.parent.find_all(current.name, recursive=False) if current.parent else []
             if len(siblings) > 1:
-                index = siblings.index(parent)
-                path.append(f"{parent.name}[{index}]")
+                index = siblings.index(current)
+                path.append(f"{current.name}:nth-of-type({index + 1})")
             else:
-                path.append(parent.name)
-            parent = parent.parent
-        return "." + ".".join(reversed(path))
+                path.append(current.name)
+            current = current.parent
+        
+        # Return a valid CSS selector path
+        if path:
+            return " > ".join(reversed(path))
+        return "body"
     
     def reassemble_html(self, original_html: str, translated_nodes: List[Dict[str, Any]]) -> str:
         """Reassemble HTML with translated text nodes."""
         soup = BeautifulSoup(original_html, 'html.parser')
         
+        # Create a mapping of original text to translated text
+        text_mapping = {}
         for node in translated_nodes:
-            path = node['path']
-            translated_text = node['translated_text']
-            elements = soup.select(path)
-            if elements:
-                elements[0].string = translated_text
+            if 'translated_text' in node and 'text' in node:
+                text_mapping[node['text']] = node['translated_text']
+        
+        # Replace text content in soup
+        for element in soup.find_all(text=True):
+            text_content = element.strip()
+            if text_content and text_content in text_mapping:
+                # Replace the text content while preserving HTML structure
+                element.replace_with(text_mapping[text_content])
                 
         return str(soup)
     

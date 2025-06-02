@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     # Note: Deep Translator (fallback) doesn't require API keys
 
+    # Webhook Configuration
+    WEBHOOK_SECRET: Optional[str] = None  # Secret for webhook signature verification
+
     class Config:
         env_file = ".env"
         case_sensitive = True

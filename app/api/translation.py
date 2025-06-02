@@ -377,3 +377,193 @@ async def get_language_direction(lang_code: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+# ==== NEW: Structured Content Translation Endpoints ====
+
+class StructuredTranslationRequest(BaseModel):
+    """Request model for structured content translation with field mapping."""
+    content: Dict[str, Any] = Field(..., description="Structured content to translate")
+    client_id: str = Field(..., description="Client identifier", min_length=1, max_length=100)
+    collection_name: str = Field(..., description="Collection name for field mapping", min_length=1, max_length=100)
+    source_lang: str = Field(..., description="Source language code (e.g., 'en')")
+    target_lang: str = Field(..., description="Target language code (e.g., 'ar', 'bs')")
+    provider: str = Field(..., description="AI provider ('openai', 'anthropic', 'mistral', 'deepseek')")
+    api_key: str = Field(..., description="API key for the specified provider", min_length=10, max_length=200)
+    model: Optional[str] = Field(None, description="Model name (optional, uses provider default)", max_length=100)
+    context: Optional[str] = Field(None, description="Optional context for better translation", max_length=500)
+
+    @validator('source_lang', 'target_lang')
+    def validate_language_codes(cls, v):
+        if len(v) != 2:
+            raise ValueError("Language codes must be 2 characters long")
+        return v.lower()
+
+    @validator('provider')
+    def validate_provider(cls, v):
+        valid_providers = ["openai", "anthropic", "mistral", "deepseek"]
+        if v.lower() not in valid_providers:
+            raise ValueError(f"Provider must be one of: {valid_providers}")
+        return v.lower()
+
+    @validator('api_key')
+    def validate_api_key(cls, v):
+        import re
+        cleaned_key = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', v)
+        if re.search(r'(?i)(system|user|assistant)\s*:', cleaned_key):
+            raise ValueError("Invalid API key format")
+        return cleaned_key.strip()
+
+
+class TranslationPreviewRequest(BaseModel):
+    """Request model for translation preview."""
+    content: Dict[str, Any] = Field(..., description="Content to preview")
+    client_id: str = Field(..., description="Client identifier")
+    collection_name: str = Field(..., description="Collection name")
+    target_lang: str = Field(..., description="Target language code")
+
+    @validator('target_lang')
+    def validate_target_lang(cls, v):
+        if len(v) != 2:
+            raise ValueError("Language code must be 2 characters long")
+        return v.lower()
+
+
+class ValidationRequest(BaseModel):
+    """Request model for translation validation."""
+    client_id: str = Field(..., description="Client identifier")
+    collection_name: str = Field(..., description="Collection name")
+    provider: str = Field(..., description="AI provider")
+    api_key: str = Field(..., description="API key for the provider")
+    source_lang: str = Field(..., description="Source language code")
+    target_lang: str = Field(..., description="Target language code")
+
+    @validator('source_lang', 'target_lang')
+    def validate_language_codes(cls, v):
+        if len(v) != 2:
+            raise ValueError("Language codes must be 2 characters long")
+        return v.lower()
+
+    @validator('provider')
+    def validate_provider(cls, v):
+        valid_providers = ["openai", "anthropic", "mistral", "deepseek"]
+        if v.lower() not in valid_providers:
+            raise ValueError(f"Provider must be one of: {valid_providers}")
+        return v.lower()
+
+
+@router.post("/structured", summary="Translate structured content with field mapping")
+async def translate_structured_content(request: StructuredTranslationRequest):
+    """
+    Translate structured content using field mapping configuration.
+    
+    This endpoint combines field mapping with AI translation to process structured content
+    like Directus collections. It extracts translatable fields based on configuration,
+    translates them using the specified provider, and reconstructs the content.
+    
+    **Key Features:**
+    - Field mapping configuration per client/collection
+    - Batch processing for efficiency
+    - HTML structure preservation
+    - Directus translation patterns
+    - RTL language support
+    """
+    try:
+        from ..database import get_db
+        from ..services.integrated_translation_service import IntegratedTranslationService
+        
+        # Get database session
+        db = next(get_db())
+        
+        # Initialize integrated service
+        integrated_service = IntegratedTranslationService(db)
+        
+        # Perform structured translation
+        result = await integrated_service.translate_structured_content(
+            content=request.content,
+            client_id=request.client_id,
+            collection_name=request.collection_name,
+            source_lang=request.source_lang,
+            target_lang=request.target_lang,
+            provider=request.provider,
+            api_key=request.api_key,
+            model=request.model,
+            context=request.context
+        )
+        
+        return {
+            "success": True,
+            "data": result
+        }
+
+    except TranslationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+@router.post("/preview", summary="Preview translatable fields")
+async def preview_translation(request: TranslationPreviewRequest):
+    """
+    Preview what fields would be translated without actually translating.
+    
+    This endpoint shows which fields will be extracted and translated based on
+    the field mapping configuration for the specified client and collection.
+    """
+    try:
+        from ..database import get_db
+        from ..services.integrated_translation_service import IntegratedTranslationService
+        
+        db = next(get_db())
+        integrated_service = IntegratedTranslationService(db)
+        
+        preview = await integrated_service.get_translation_preview(
+            content=request.content,
+            client_id=request.client_id,
+            collection_name=request.collection_name,
+            target_lang=request.target_lang
+        )
+        
+        return {
+            "success": True,
+            "data": preview
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+@router.post("/validate", summary="Validate translation request")
+async def validate_translation_request(request: ValidationRequest):
+    """
+    Validate a translation request before processing.
+    
+    Checks:
+    - Field mapping configuration exists
+    - Provider is supported
+    - API key is valid
+    - Language pair is supported
+    """
+    try:
+        from ..database import get_db
+        from ..services.integrated_translation_service import IntegratedTranslationService
+        
+        db = next(get_db())
+        integrated_service = IntegratedTranslationService(db)
+        
+        validation_result = await integrated_service.validate_translation_request(
+            client_id=request.client_id,
+            collection_name=request.collection_name,
+            provider=request.provider,
+            api_key=request.api_key,
+            source_lang=request.source_lang,
+            target_lang=request.target_lang
+        )
+        
+        return {
+            "success": True,
+            "data": validation_result
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
