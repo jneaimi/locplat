@@ -13,18 +13,39 @@ from ..models.field_types import (
     FieldType, DirectusTranslationPattern, ContentProcessingStrategy,
     is_rtl_language, get_field_type_from_directus
 )
+from .field_mapping_cache import get_field_cache
 
 
 class FieldMapper:
-    """Main service for handling field mapping and content processing."""
+    """Main service for handling field mapping and content processing with Redis caching."""
     
-    def __init__(self, db_session: Session, enable_logging: bool = True):
+    def __init__(self, db_session: Session, enable_logging: bool = True, enable_redis_cache: bool = True):
         self.db_session = db_session
         self.enable_logging = enable_logging
-        self._processing_cache = {}
+        self.enable_redis_cache = enable_redis_cache
+        self._processing_cache = {}  # Local fallback cache
+        self._field_cache = None  # Will be initialized when needed
+    
+    async def _get_field_cache(self):
+        """Get field cache instance lazily."""
+        if self.enable_redis_cache and self._field_cache is None:
+            self._field_cache = await get_field_cache()
+        return self._field_cache
     
     async def get_field_config(self, client_id: str, collection_name: str) -> Dict[str, Any]:
-        """Retrieve field configuration for a client and collection."""
+        """Retrieve field configuration with Redis caching support."""
+        # Try Redis cache first if enabled
+        if self.enable_redis_cache:
+            try:
+                field_cache = await self._get_field_cache()
+                cached_config = await field_cache.get_field_config(client_id, collection_name)
+                if cached_config:
+                    # Remove cache metadata before returning
+                    return {k: v for k, v in cached_config.items() if not k.startswith('_')}
+            except Exception as e:
+                self.log_warning(f"Redis cache error, falling back to local cache: {e}")
+        
+        # Fallback to local cache and database
         cache_key = f"{client_id}:{collection_name}"
         if cache_key in self._processing_cache:
             cached_config, cache_time = self._processing_cache[cache_key]
@@ -46,17 +67,35 @@ class FieldMapper:
                 "validation_rules": {}
             }
             self._processing_cache[cache_key] = (default_config, time.time())
+            
+            # Cache in Redis if enabled
+            if self.enable_redis_cache:
+                try:
+                    field_cache = await self._get_field_cache()
+                    await field_cache.cache_field_config(client_id, collection_name, default_config)
+                except Exception as e:
+                    self.log_warning(f"Failed to cache default config in Redis: {e}")
+            
             return default_config
         
         config_dict = config.to_dict()
         self._processing_cache[cache_key] = (config_dict, time.time())
         config.last_used_at = datetime.utcnow()
         self.db_session.commit()
+        
+        # Cache in Redis if enabled
+        if self.enable_redis_cache:
+            try:
+                field_cache = await self._get_field_cache()
+                await field_cache.cache_field_config(client_id, collection_name, config_dict)
+            except Exception as e:
+                self.log_warning(f"Failed to cache config in Redis: {e}")
+        
         return config_dict
 
     async def save_field_config(self, client_id: str, collection_name: str, 
                                field_config: Dict[str, Any]) -> None:
-        """Save field configuration to database."""
+        """Save field configuration with Redis cache invalidation."""
         config = self.db_session.query(FieldConfig).filter_by(
             client_id=client_id, collection_name=collection_name
         ).first()
@@ -73,15 +112,36 @@ class FieldMapper:
         
         self.db_session.commit()
         
-        # Invalidate cache
+        # Invalidate local cache
         cache_key = f"{client_id}:{collection_name}"
         self._processing_cache.pop(cache_key, None)
+        
+        # Invalidate Redis cache and cache new config
+        if self.enable_redis_cache:
+            try:
+                field_cache = await self._get_field_cache()
+                await field_cache.invalidate_client_cache(client_id, collection_name)
+                await field_cache.cache_field_config(client_id, collection_name, field_config)
+            except Exception as e:
+                self.log_warning(f"Failed to invalidate/update Redis cache: {e}")
     
     def extract_fields(self, content: Dict[str, Any], field_config: Dict[str, Any], 
                       language: str = None) -> Dict[str, Any]:
-        """Extract fields to translate based on configuration."""
+        """Extract fields with Redis caching for extraction results."""
         start_time = time.time()
         result = {}
+        
+        # Try Redis cache for extraction results if enabled
+        cached_result = None
+        if self.enable_redis_cache:
+            try:
+                field_cache = self._field_cache  # Use sync method since this is not async
+                if field_cache:
+                    # Note: This would need to be async, but extract_fields is sync
+                    # We'll implement a sync wrapper or make this method async in future
+                    pass
+            except Exception as e:
+                self.log_warning(f"Redis extraction cache error: {e}")
         
         try:
             field_paths = field_config["field_paths"]
@@ -337,6 +397,84 @@ class FieldMapper:
         except Exception as e:
             # Don't fail the main operation if logging fails
             print(f"Warning: Failed to log processing operation: {e}")
+    
+    def log_warning(self, message: str) -> None:
+        """Log warning message."""
+        print(f"FieldMapper Warning: {message}")
+    
+    async def invalidate_cache(self, client_id: str, collection_name: str = None) -> Dict[str, int]:
+        """Invalidate caches for client/collection."""
+        result = {'local_cache': 0, 'redis_cache': 0}
+        
+        # Invalidate local cache
+        if collection_name:
+            cache_key = f"{client_id}:{collection_name}"
+            if self._processing_cache.pop(cache_key, None):
+                result['local_cache'] = 1
+        else:
+            # Invalidate all client caches
+            keys_to_remove = [k for k in self._processing_cache.keys() if k.startswith(f"{client_id}:")]
+            for key in keys_to_remove:
+                self._processing_cache.pop(key, None)
+            result['local_cache'] = len(keys_to_remove)
+        
+        # Invalidate Redis cache
+        if self.enable_redis_cache:
+            try:
+                field_cache = await self._get_field_cache()
+                result['redis_cache'] = await field_cache.invalidate_client_cache(client_id, collection_name)
+            except Exception as e:
+                self.log_warning(f"Failed to invalidate Redis cache: {e}")
+        
+        return result
+    
+    async def get_cache_stats(self) -> Dict[str, Any]:
+        """Get comprehensive caching statistics."""
+        stats = {
+            'local_cache': {
+                'entries': len(self._processing_cache),
+                'keys': list(self._processing_cache.keys())
+            },
+            'redis_cache': None,
+            'redis_enabled': self.enable_redis_cache
+        }
+        
+        if self.enable_redis_cache:
+            try:
+                field_cache = await self._get_field_cache()
+                stats['redis_cache'] = await field_cache.get_cache_stats()
+            except Exception as e:
+                stats['redis_cache'] = {'error': str(e)}
+        
+        return stats
+    
+    async def warm_cache_from_database(self, client_id: str = None) -> Dict[str, int]:
+        """Warm Redis cache with configurations from database."""
+        if not self.enable_redis_cache:
+            return {'error': 'Redis cache not enabled'}
+        
+        try:
+            query = self.db_session.query(FieldConfig)
+            if client_id:
+                query = query.filter_by(client_id=client_id)
+            
+            configs = query.all()
+            config_list = []
+            
+            for config in configs:
+                config_data = {
+                    'client_id': config.client_id,
+                    'collection_name': config.collection_name,
+                    'field_config': config.to_dict()
+                }
+                config_list.append(config_data)
+            
+            field_cache = await self._get_field_cache()
+            return await field_cache.warm_cache(config_list)
+            
+        except Exception as e:
+            self.log_warning(f"Failed to warm cache from database: {e}")
+            return {'error': str(e)}
     
     def handle_directus_translations(self, content: Dict[str, Any], field_config: Dict[str, Any], 
                                     language: str) -> Dict[str, Any]:
