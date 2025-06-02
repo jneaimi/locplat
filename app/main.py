@@ -5,6 +5,7 @@ from app.config import settings
 from app.api.health import router as health_router
 from app.api.translation import router as translation_router
 from app.api.cache import router as cache_router
+from app.api.field_mapping import router as field_mapping_router
 from app.services.ai_response_cache import close_cache
 
 @asynccontextmanager
@@ -43,6 +44,7 @@ app.add_middleware(
 app.include_router(health_router, prefix="", tags=["Health"])
 app.include_router(translation_router, prefix="/api/v1", tags=["Translation"])
 app.include_router(cache_router, prefix="/api/v1", tags=["Cache"])
+app.include_router(field_mapping_router, tags=["Field Mapping"])
 
 if __name__ == "__main__":
     import uvicorn

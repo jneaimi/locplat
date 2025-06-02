@@ -28,6 +28,7 @@ deep-translator>=1.11.4,<2.0.0
 # Utilities - Latest Stable Versions
 python-multipart>=0.0.12,<0.1.0
 python-dotenv>=1.0.1,<2.0.0
+beautifulsoup4>=4.12.3,<5.0.0
 
 # Development - Latest Stable Versions
 pytest>=8.3.4,<9.0.0
