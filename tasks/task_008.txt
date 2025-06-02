@@ -1,0 +1,209 @@
+# Task ID: 8
+# Title: Implement Recursive Translation System with Dynamic Configuration
+# Status: pending
+# Dependencies: 4
+# Priority: high
+# Description: Create a comprehensive configurable recursive translation system that can dynamically process nested JSON structures with configurable field mapping, supporting Arabic and Bosnian languages while integrating with the multi-provider AI system and Redis caching.
+# Details:
+This task involves building a flexible recursive translation system that addresses the limitations of the existing directus-translator project:
+
+1. **Dynamic Field Configuration System**:
+   - Replace hardcoded field lists with a database-backed configuration system
+   - Create models for storing translation configurations (collections, fields, rules)
+   - Implement configuration loading and validation services
+
+2. **Recursive Translation Engine**:
+   - Develop a recursive traversal algorithm for nested JSON structures
+   - Support configurable depth limits to prevent infinite recursion
+   - Implement pattern matching for field inclusion/exclusion
+   - Handle special cases for arrays, objects, and primitive values
+
+3. **Cultural Context Handling**:
+   - Add language-specific context providers for Arabic and Bosnian
+   - Implement right-to-left text handling for Arabic
+   - Create culturally-sensitive prompt templates for each language pair
+
+4. **Integration with Provider System**:
+   - Connect to the existing multi-provider system (Task 2)
+   - Implement provider selection logic based on content complexity
+   - Add fallback mechanisms when primary providers fail
+
+5. **Configuration API Endpoints**:
+   - Create REST endpoints for managing translation configurations
+   - Implement real-time configuration updates without service restart
+   - Add validation middleware for configuration changes
+
+6. **Complex Structure Handling**:
+   - Support Directus-specific data structures (collections, relations, blocks)
+   - Implement special handlers for FAQs, steps, rows, and other nested structures
+   - Add content type detection and appropriate processing
+
+7. **Performance Optimization**:
+   - Implement batch translation for efficiency
+   - Utilize the Redis caching layer (Task 3) for cost optimization
+   - Add metrics collection for translation performance
+
+8. **Implementation Details**:
+   ```python
+   # Example recursive translation function
+   async def translate_recursive(
+       data: Dict[str, Any], 
+       config: TranslationConfig,
+       source_lang: str,
+       target_lang: str,
+       depth: int = 0
+   ) -> Dict[str, Any]:
+       """Recursively translate a nested data structure based on configuration."""
+       if depth > config.max_depth:
+           return data
+           
+       result = {}
+       for key, value in data.items():
+           # Check if this field should be translated based on config
+           if not should_translate_field(key, config):
+               result[key] = value
+               continue
+               
+           if isinstance(value, dict):
+               # Recursive case for nested objects
+               result[key] = await translate_recursive(
+                   value, config, source_lang, target_lang, depth + 1
+               )
+           elif isinstance(value, list):
+               # Handle arrays of objects or strings
+               result[key] = await translate_array(
+                   value, config, source_lang, target_lang, depth + 1
+               )
+           elif isinstance(value, str) and value.strip():
+               # Translate leaf string values
+               result[key] = await translation_service.translate(
+                   value, source_lang, target_lang, 
+                   context=get_field_context(key, config)
+               )
+           else:
+               # Pass through non-string primitives
+               result[key] = value
+               
+       return result
+   ```
+
+9. **Configuration Schema**:
+   ```python
+   # Example configuration model
+   class TranslationFieldConfig(BaseModel):
+       collection: str
+       field: str
+       include_pattern: Optional[str] = None
+       exclude_pattern: Optional[str] = None
+       max_depth: int = 5
+       context_template: Optional[str] = None
+       custom_rules: Dict[str, Any] = Field(default_factory=dict)
+   ```
+
+10. **API Endpoint Implementation**:
+    - GET /api/translation/config - List all configurations
+    - POST /api/translation/config - Create new configuration
+    - PUT /api/translation/config/{id} - Update configuration
+    - DELETE /api/translation/config/{id} - Remove configuration
+    - POST /api/translation/translate - Perform translation with current config
+
+# Test Strategy:
+1. **Unit Testing**:
+   - Create unit tests for the recursive translation algorithm with various nested structures
+   - Test field inclusion/exclusion patterns with different configuration settings
+   - Verify correct handling of arrays, objects, and primitive values
+   - Test edge cases like empty objects, null values, and maximum depth scenarios
+
+2. **Integration Testing**:
+   - Test integration with the translation provider system (Task 2)
+   - Verify proper utilization of the Redis caching layer (Task 3)
+   - Test the complete translation pipeline with real Directus data structures
+   - Verify fallback behavior when primary providers fail
+
+3. **Configuration API Testing**:
+   - Test all CRUD operations on the configuration API endpoints
+   - Verify real-time configuration updates are applied without service restart
+   - Test validation of invalid configuration submissions
+   - Verify proper error handling and response formats
+
+4. **Language-Specific Testing**:
+   - Test Arabic translation with right-to-left text handling
+   - Test Bosnian translation with appropriate cultural context
+   - Verify correct handling of language-specific formatting and conventions
+   - Test with real-world content examples for each language
+
+5. **Performance Testing**:
+   - Measure translation throughput with various content sizes
+   - Test caching effectiveness for repeated translations
+   - Verify resource usage under load
+   - Test with large nested structures to ensure efficient processing
+
+6. **End-to-End Testing**:
+   - Create test scenarios that simulate real Directus usage patterns
+   - Test with complex nested structures (FAQs, steps, rows)
+   - Verify correct translation of all configured fields
+   - Test with actual content from production or staging environments
+
+7. **Manual Testing Checklist**:
+   - Verify translations maintain proper formatting and structure
+   - Check cultural appropriateness of translations
+   - Test configuration changes through the API
+   - Verify proper handling of HTML content within translations
+
+8. **Acceptance Criteria Verification**:
+   - Confirm dynamic field configuration works as expected
+   - Verify multi-language support with cultural sensitivity
+   - Test recursive translation at various depths
+   - Confirm integration with all provider fallbacks
+   - Verify Redis caching reduces duplicate API calls
+   - Test real-time configuration updates
+
+# Subtasks:
+## 1. Create Database Models for Translation Configuration [pending]
+### Dependencies: None
+### Description: Design and implement database models to store translation configurations including collections, fields, rules, and context templates.
+### Details:
+Create SQLAlchemy models for TranslationConfig, TranslationFieldConfig, and ContextTemplate. TranslationConfig should include collection name, language pairs, and global settings. TranslationFieldConfig should store field-specific rules including patterns for inclusion/exclusion and max depth. ContextTemplate should store language-specific prompt templates.
+
+## 2. Implement Configuration Management Service [pending]
+### Dependencies: 8.1
+### Description: Create a service layer to manage translation configurations with CRUD operations and validation logic.
+### Details:
+Develop ConfigurationService class with methods for loading, validating, creating, updating, and deleting configurations. Implement validation logic to ensure configurations are well-formed. Add methods to retrieve configurations by collection, field, or language pair. Include caching mechanism to avoid frequent database queries.
+
+## 3. Develop Core Recursive Translation Algorithm [pending]
+### Dependencies: 8.1, 8.2
+### Description: Implement the recursive traversal algorithm that can process nested JSON structures according to configuration rules.
+### Details:
+Create TranslationEngine class with translate_recursive method as shown in the example. Implement helper methods for handling different data types (objects, arrays, primitives). Add depth tracking and limits to prevent infinite recursion. Implement pattern matching for field inclusion/exclusion based on configuration.
+
+## 4. Build Provider Integration Layer [pending]
+### Dependencies: 8.3
+### Description: Create an adapter layer to connect the translation engine with multiple AI providers and implement provider selection logic.
+### Details:
+Implement ProviderManager class that interfaces with the multi-provider AI system. Add logic to select appropriate providers based on content complexity, language pair, and cost considerations. Implement fallback mechanisms when primary providers fail. Add retry logic with exponential backoff for transient errors.
+
+## 5. Implement Language-Specific Context Handlers [pending]
+### Dependencies: 8.2
+### Description: Create specialized context handlers for Arabic and Bosnian languages with culturally appropriate translation rules.
+### Details:
+Develop ContextHandler classes for each supported language pair. Implement right-to-left text handling for Arabic. Create culturally-sensitive prompt templates. Add special case handling for idioms, formal/informal speech, and gender-specific language. Implement context injection into translation requests.
+
+## 6. Develop Redis Caching Integration [pending]
+### Dependencies: 8.3, 8.4
+### Description: Integrate the translation system with Redis for caching translations to improve performance and reduce costs.
+### Details:
+Create CacheManager class that interfaces with Redis. Implement intelligent caching strategies with appropriate TTL values. Add cache key generation based on content hash, language pair, and configuration version. Implement batch retrieval and storage operations for efficiency. Add cache invalidation mechanisms when configurations change.
+
+## 7. Create REST API Endpoints for Translation and Configuration [pending]
+### Dependencies: 8.2, 8.3, 8.4, 8.6
+### Description: Implement REST API endpoints for translation operations and configuration management.
+### Details:
+Create FastAPI/Flask routes for translation and configuration management. Implement endpoints listed in the task description (GET/POST/PUT/DELETE for configurations, POST for translation). Add request validation, error handling, and appropriate HTTP status codes. Implement pagination for configuration listing. Add authentication and authorization middleware.
+
+## 8. Implement Special Handlers for Complex Structures [pending]
+### Dependencies: 8.3, 8.5
+### Description: Create specialized handlers for Directus-specific data structures and complex nested content types.
+### Details:
+Develop structure-specific handlers for FAQs, steps, rows, and other common content patterns. Implement content type detection to automatically apply appropriate handlers. Create TranslationStrategy classes for different structure types. Add support for Directus blocks and relations with proper reference handling. Implement custom field processors for markdown, HTML, and other formatted content.
+
