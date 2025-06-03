@@ -6,8 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "8000:8000"  # Temporary port mapping for debugging
+    # No port mapping - Coolify handles this automatically via SERVICE_FQDN
     environment:
       - SERVICE_FQDN_API_8000=${DOMAIN_NAME:-locplat.estatfinder.com}
       - ENVIRONMENT=${ENVIRONMENT}
