@@ -106,4 +106,5 @@ volumes:
 
 networks:
   locplat-network:
-    driver: bridge
+    external: true
+    name: coolify
