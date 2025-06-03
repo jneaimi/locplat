@@ -8,6 +8,10 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-8080}:8000"  # Default to 8080 if API_PORT not set
+    labels:
+      - "caddy=${DOMAIN_NAME:-api.locplat.com}"
+      - "caddy.reverse_proxy={{upstreams 8000}}"
+      - "caddy.header.X-Forwarded-Proto https"
     environment:
       - ENVIRONMENT=${ENVIRONMENT}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
