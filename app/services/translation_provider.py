@@ -8,6 +8,8 @@ import asyncio
 import logging
 import re
 
+from ..utils.character_handler import character_handler, CharacterValidationResult, Script
+
 logger = logging.getLogger(__name__)
 
 
@@ -224,7 +226,7 @@ class TranslationProvider(ABC):
     def optimize_prompt_for_provider(
         self, text: str, source_lang: str, target_lang: str, context: Optional[str] = None
     ) -> str:
-        """Optimize translation prompt for the specific provider with input sanitization."""
+        """Optimize translation prompt for the specific provider with input sanitization and character handling."""
         # Sanitize inputs to prevent prompt injection attacks
         safe_text = self._sanitize_text(text)
         safe_context = self._sanitize_context(context) if context else None
@@ -232,6 +234,9 @@ class TranslationProvider(ABC):
         # Validate that we still have meaningful content after sanitization
         if not safe_text.strip():
             raise ProviderError(self.name, "Text content invalid or empty after sanitization")
+
+        # Pre-process text for character handling
+        safe_text = self._preprocess_text_for_translation(safe_text, source_lang, target_lang)
 
         lang_names = {'en': 'English', 'ar': 'Arabic', 'bs': 'Bosnian'}
         source_name = lang_names.get(source_lang, source_lang.upper())
@@ -252,6 +257,11 @@ class TranslationProvider(ABC):
             if target_lang == 'bs':
                 prompt += " Use Latin script unless otherwise specified."
         
+        # Add character preservation instructions
+        char_instructions = self._get_character_preservation_instructions(safe_text, target_lang)
+        if char_instructions:
+            prompt += f" {char_instructions}"
+        
         if safe_context and not is_html_fragment:
             prompt += f" Context: {safe_context}"
         elif is_html_fragment:
@@ -260,6 +270,94 @@ class TranslationProvider(ABC):
 
         prompt += f"\n\nText to translate: {safe_text}"
         return prompt
+
+    def _preprocess_text_for_translation(self, text: str, source_lang: str, target_lang: str) -> str:
+        """
+        Preprocess text for translation with character handling.
+        
+        Args:
+            text: Input text to preprocess
+            source_lang: Source language code
+            target_lang: Target language code
+            
+        Returns:
+            Preprocessed text ready for translation
+        """
+        # Validate and repair encoding issues
+        validation_result = character_handler.validate_text_encoding(text)
+        
+        if not validation_result.is_valid:
+            logger.warning(f"Character encoding issues detected: {validation_result.encoding_issues}")
+            if validation_result.repaired_text:
+                text = validation_result.repaired_text
+                logger.info("Text encoding repaired automatically")
+        
+        # Normalize text to NFC form for consistency
+        text = character_handler.normalize_text(text, 'NFC')
+        
+        return text
+
+    def _get_character_preservation_instructions(self, text: str, target_lang: str) -> str:
+        """
+        Generate character preservation instructions for AI providers.
+        
+        Args:
+            text: Text to analyze for special characters
+            target_lang: Target language code
+            
+        Returns:
+            Instructions for preserving special characters
+        """
+        special_chars = character_handler.find_special_characters(text)
+        
+        if not special_chars:
+            return ""
+        
+        instructions = []
+        
+        # For Bosnian/Croatian/Serbian
+        if target_lang in ['bs', 'hr', 'sr']:
+            bosnian_chars_found = special_chars.intersection(character_handler.bosnian_chars)
+            if bosnian_chars_found:
+                char_list = ', '.join(sorted(bosnian_chars_found))
+                instructions.append(f"IMPORTANT: Preserve these special characters exactly as they appear: {char_list}")
+                instructions.append("Use Latin script with proper diacritical marks.")
+        
+        # For other Slavic languages
+        if target_lang in ['pl', 'cs', 'sk']:
+            instructions.append("IMPORTANT: Maintain all diacritical marks and special characters correctly.")
+        
+        # General instruction for any special characters
+        if special_chars and target_lang in ['bs', 'hr', 'sr', 'pl', 'cs', 'sk']:
+            instructions.append("Do not replace special characters with basic Latin equivalents.")
+        
+        return " ".join(instructions)
+
+    def _post_process_translation(self, original: str, translation: str, source_lang: str, target_lang: str) -> str:
+        """
+        Post-process translation to ensure character preservation.
+        
+        Args:
+            original: Original text
+            translation: Translated text
+            source_lang: Source language code
+            target_lang: Target language code
+            
+        Returns:
+            Post-processed translation
+        """
+        # Check for character preservation issues
+        corrected_translation, corrections = character_handler.preserve_special_characters(
+            original, translation
+        )
+        
+        if corrections:
+            logger.warning(f"Character preservation issues detected: {corrections}")
+        
+        # Normalize the final translation
+        corrected_translation = character_handler.normalize_text(corrected_translation, 'NFC')
+        
+        return corrected_translation
 
 
 class BaseAsyncProvider(TranslationProvider):

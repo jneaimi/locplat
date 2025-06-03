@@ -25,7 +25,7 @@ class OpenAIProvider(BaseAsyncProvider):
         api_key: str,
         context: Optional[str] = None
     ) -> str:
-        """Translate text using OpenAI GPT."""
+        """Translate text using OpenAI GPT with character handling."""
         try:
             client = AsyncOpenAI(api_key=api_key)
             prompt = self._create_openai_prompt(text, source_lang, target_lang, context)
@@ -35,7 +35,7 @@ class OpenAIProvider(BaseAsyncProvider):
                 messages=[
                     {
                         "role": "system", 
-                        "content": "You are a professional translator. Translate the given text accurately and provide ONLY the translated text. Do not add any notes, explanations, disclaimers, or additional commentary. Return only the direct translation."
+                        "content": "You are a professional translator. Translate the given text accurately and provide ONLY the translated text. Do not add any notes, explanations, disclaimers, or additional commentary. Return only the direct translation. Pay special attention to preserving diacritical marks and special characters exactly as they should appear in the target language."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -45,7 +45,10 @@ class OpenAIProvider(BaseAsyncProvider):
             translation = response.choices[0].message.content.strip()
             if not translation:
                 raise ProviderError(self.name, "Empty translation response")
-            return translation
+            
+            # Apply character handling post-processing
+            processed_translation = self._post_process_translation(text, translation, source_lang, target_lang)
+            return processed_translation
             
         except openai.AuthenticationError as e:
             raise ProviderError(self.name, f"Authentication failed: {str(e)}", e)
