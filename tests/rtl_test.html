@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>LocPlat RTL Test</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; }
+        .rtl { direction: rtl; text-align: right; background: #f0f8ff; padding: 15px; margin: 10px 0; }
+        .ltr { direction: ltr; text-align: left; background: #fff0f0; padding: 15px; margin: 10px 0; }
+        .comparison { display: flex; gap: 20px; }
+        .comparison > div { flex: 1; }
+        h2 { color: #333; }
+        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>LocPlat RTL Display Test</h1>
+    
+    <h2>English Original</h2>
+    <div class="ltr">
+        Welcome to LocPlat! Our field mapping system makes it easy to translate complex content structures from Directus CMS.
+    </div>
+    
+    <h2>Arabic Translation (Proper RTL)</h2>
+    <div class="rtl">
+        مرحبًا بكم في LocPlat! يسهل نظام تخطيط الحقول لدينا ترجمة الهياكل المحتوى المعقدة من نظام إدارة المحتوى Directus.
+    </div>
+    
+    <h2>Comparison</h2>
+    <div class="comparison">
+        <div>
+            <h3>Wrong (LTR forced)</h3>
+            <div class="ltr" style="direction: ltr;">
+                مرحبًا بكم في LocPlat! يسهل نظام تخطيط الحقول لدينا ترجمة الهياكل المحتوى المعقدة من نظام إدارة المحتوى Directus.
+            </div>
+        </div>
+        <div>
+            <h3>Correct (RTL)</h3>
+            <div class="rtl">
+                مرحبًا بكم في LocPlat! يسهل نظام تخطيط الحقول لدينا ترجمة الهياكل المحتوى المعقدة من نظام إدارة المحتوى Directus.
+            </div>
+        </div>
+    </div>
+    
+    <h2>JSON API Response</h2>
+    <pre>{
+  "translated_text": "مرحبًا بكم في LocPlat! يسهل نظام تخطيط الحقول لدينا ترجمة الهياكل المحتوى المعقدة من نظام إدارة المحتوى Directus.",
+  "language_direction": "rtl",
+  "quality_score": 0.9
+}</pre>
+    
+    <h2>✅ Result</h2>
+    <p><strong>If the "Correct (RTL)" version above flows right-to-left, your display is working properly!</strong></p>
+    <p>If both versions look the same, you need RTL support in your terminal/interface.</p>
+</body>
+</html>
