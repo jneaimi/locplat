@@ -6,14 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "${API_PORT:-8080}:8000"  # Default to 8080 if API_PORT not set
-    labels:
-      - "caddy=${DOMAIN_NAME:-locplat.estatfinder.com}"
-      - "caddy.reverse_proxy={{upstreams 8000}}"
-      - "caddy.header=-Server"
-      - "caddy.encode=zstd gzip"
+    # Remove port mapping - Coolify handles this automatically
     environment:
+      - SERVICE_FQDN_API_8000=${DOMAIN_NAME:-locplat.estatfinder.com}
       - ENVIRONMENT=${ENVIRONMENT}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
