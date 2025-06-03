@@ -6,7 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    # No port mapping - Coolify handles this automatically via SERVICE_FQDN
+    ports:
+      - "8090:8090"  # External port 8090 maps to internal port 8090
     environment:
       - SERVICE_FQDN_API_8090=${DOMAIN_NAME:-locplat.estatfinder.com}
       - ENVIRONMENT=${ENVIRONMENT}
