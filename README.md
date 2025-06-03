@@ -12,11 +12,30 @@ LocPlat is a simple AI-powered translation service designed for Directus CMS. It
 - **RTL Support**: Proper Arabic text handling
 - **Docker Ready**: Coolify compatible deployment
 
-## Architecture
-- Single FastAPI service
-- PostgreSQL for data persistence
-- Redis for caching
-- Docker-based deployment
+## Quick Start
+
+### Development
+```bash
+# Clone and start local development
+git clone <repository>
+cd locplat
+docker-compose up -d
+```
+
+### Production Deployment
+```bash
+# 1. Prepare production environment
+cp .env.production.template .env.production
+# Edit .env.production with your values
+
+# 2. Validate configuration
+./scripts/validate-production-config.sh
+
+# 3. Deploy to Coolify
+# Upload to Coolify with docker-compose.prod.yml
+```
+
+📖 **Full deployment guide**: [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## Quick Start
 
