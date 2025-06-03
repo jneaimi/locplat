@@ -12,6 +12,9 @@ services:
       - "caddy=${DOMAIN_NAME:-api.locplat.com}"
       - "caddy.reverse_proxy={{upstreams 8000}}"
       - "caddy.header.X-Forwarded-Proto https"
+      - "caddy.tls.email=${LETSENCRYPT_EMAIL:-admin@locplat.com}"
+      - "coolify.managed=true"
+      - "coolify.version=4"
     environment:
       - ENVIRONMENT=${ENVIRONMENT}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
