@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     # No port mapping - Coolify handles this automatically via SERVICE_FQDN
     environment:
-      - SERVICE_FQDN_API_8000=${DOMAIN_NAME:-locplat.estatfinder.com}
+      - SERVICE_FQDN_API_8080=${DOMAIN_NAME:-locplat.estatfinder.com}
       - ENVIRONMENT=${ENVIRONMENT}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
