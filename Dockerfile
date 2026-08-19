@@ -21,12 +21,13 @@ RUN useradd --create-home --shell /bin/bash app \
     && chown -R app:app /app
 USER app
 
-# Expose port
-EXPOSE 8000
+# Expose port — must match the uvicorn --port below
+EXPOSE 8090
 
-# Health check
+# Health check — 127.0.0.1, not localhost: localhost can resolve to IPv6 ::1
+# while uvicorn binds 0.0.0.0 (IPv4 only).
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://127.0.0.1:8090/health || exit 1
 
 # Start the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090"]
